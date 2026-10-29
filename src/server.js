@@ -65,7 +65,10 @@ function json(res, code, payload) {
 
 /** Keep a request-controlled string from doing anything but reading. */
 function scrubLog(value) {
+  // Remove line breaks first and explicitly — a log line is one line, and both
+  // a forgeable second entry and a terminal escape sequence start with one.
   return String(value == null ? "" : value)
+    .replace(/[\r\n]+/g, " ")
     .replace(/[^\x20-\x7e]/g, "?")
     .slice(0, 200);
 }
