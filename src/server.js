@@ -63,12 +63,19 @@ function json(res, code, payload) {
   res.end(body);
 }
 
+class HTTPError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function readBody(req, limit = 2_000_000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > limit) throw new Error("body too large");
+    if (size > limit) throw new HTTPError(413, `body larger than ${Math.round(limit / 1000)} KB`);
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -76,8 +83,63 @@ async function readBody(req, limit = 2_000_000) {
   try {
     return JSON.parse(text);
   } catch {
-    return { text };
+    // Malformed JSON used to be silently treated as prompt text. Say no.
+    throw new HTTPError(400, "body must be JSON");
   }
+}
+
+/**
+ * Host + Origin defence.
+ *
+ * Without this, any web page you visit can POST to http://localhost:7777 and
+ * — because we reflect the Origin header — read the response back. That is a
+ * full local-network data leak (and, with approvals pending, worse). Two rules:
+ *
+ *   1. the Host header must be a name we actually answer on (blocks DNS
+ *      rebinding, where attacker.example resolves to 127.0.0.1);
+ *   2. a browser-supplied Origin must match that same set (blocks CSRF),
+ *      except for "null" origins from file:// pages, which we reject too.
+ *
+ * Requests with no Origin at all (curl, the CLI, native apps) are unaffected.
+ */
+function allowedHostnames() {
+  const names = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+  for (const addr of lanAddresses()) names.add(addr.address);
+  if (config.host && config.host !== "0.0.0.0") names.add(config.host);
+  for (const extra of config.allowedHosts) names.add(extra.toLowerCase());
+  return names;
+}
+
+/** "*.e2b.app" allows any single-or-multi-level subdomain of e2b.app. */
+function matchesAny(host, names) {
+  if (!host) return false;
+  if (names.has(host)) return true;
+  for (const name of names) {
+    if (!name.startsWith("*.")) continue;
+    const suffix = name.slice(1); // ".e2b.app"
+    if (host.endsWith(suffix) && host.length > suffix.length) return true;
+  }
+  return false;
+}
+
+function hostnameOf(value) {
+  if (!value) return null;
+  try {
+    return new URL(value.includes("://") ? value : `http://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function originAllowed(req, names) {
+  const hostHeader = hostnameOf(req.headers.host);
+  if (hostHeader && !matchesAny(hostHeader, names)) return { ok: false, why: `host "${hostHeader}" is not one Pinch answers on` };
+
+  const origin = req.headers.origin;
+  if (!origin) return { ok: true };
+  const host = hostnameOf(origin);
+  if (!matchesAny(host, names)) return { ok: false, why: `origin "${origin}" is not allowed` };
+  return { ok: true };
 }
 
 function authorised(req, url) {
@@ -85,7 +147,13 @@ function authorised(req, url) {
   const header = req.headers["x-pinch-key"];
   const query = url.searchParams.get("key");
   const cookie = /(?:^|;\s*)pinch_key=([^;]+)/.exec(req.headers.cookie || "")?.[1];
-  return [header, query, cookie && decodeURIComponent(cookie)].includes(config.authKey);
+  let decoded = null;
+  try {
+    decoded = cookie ? decodeURIComponent(cookie) : null;
+  } catch {
+    decoded = null; // a mangled cookie is simply not a key
+  }
+  return [header, query, decoded].includes(config.authKey);
 }
 
 function sse(res) {
@@ -277,13 +345,40 @@ async function handleApi(req, res, url) {
 export function createPinchServer() {
   ensureData();
   return createServer(async (req, res) => {
-    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    try {
+      await respond(req, res);
+    } catch (err) {
+      // Last line of defence: a thrown URIError from a crafted request used to
+      // escape as an unhandled rejection and take the socket with it.
+      const status = err instanceof HTTPError ? err.status : err instanceof URIError ? 400 : 500;
+      const message = err instanceof URIError ? "malformed URL encoding" : String(err.message || err);
+      if (!res.headersSent) json(res, status, { error: message });
+      else res.end();
+    }
+  });
+}
 
-    // CORS for local tools only — no wildcard credentials.
-    res.setHeader("access-control-allow-origin", req.headers.origin || "*");
+async function respond(req, res) {
+    // Fixed base: the Host header is attacker-controlled, so it must never
+    // influence how we parse our own URL.
+    const url = new URL(req.url || "/", "http://localhost");
+
+    const names = allowedHostnames();
+    const origin = originAllowed(req, names);
+
+    // Reflect only an origin we trust; never echo an arbitrary one.
+    if (origin.ok && req.headers.origin) res.setHeader("access-control-allow-origin", req.headers.origin);
+    else if (origin.ok) res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("vary", "origin");
     res.setHeader("access-control-allow-headers", "content-type, x-pinch-key");
     res.setHeader("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
     if (req.method === "OPTIONS") return res.writeHead(204).end();
+
+    if (!origin.ok) {
+      if (url.pathname.startsWith("/api/")) return json(res, 403, { error: `refused: ${origin.why}` });
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+      return res.end(`Pinch refused this request: ${origin.why}.\nAdd the name to PINCH_ALLOWED_HOSTS if this is your own proxy.\n`);
+    }
 
     if (!authorised(req, url)) {
       if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "bad or missing PINCH_KEY" });
@@ -303,12 +398,6 @@ export function createPinchServer() {
       res.setHeader("set-cookie", `pinch_key=${encodeURIComponent(config.authKey)}; Path=/; Max-Age=31536000; SameSite=Lax`);
     }
 
-    try {
-      if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
-      return await serveStatic(req, res, url.pathname === "/" ? "/index.html" : url.pathname);
-    } catch (err) {
-      if (!res.headersSent) json(res, 500, { error: String(err.message || err) });
-      else res.end();
-    }
-  });
+    if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
+    return await serveStatic(req, res, url.pathname === "/" ? "/index.html" : url.pathname);
 }

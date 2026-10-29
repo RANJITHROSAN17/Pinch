@@ -83,6 +83,10 @@ export const config = Object.freeze({
   // Set PINCH_GUARD=off to silence the post-reply honesty check (not advised).
   disableGuard: /^(0|false|off|no)$/i.test(env.PINCH_GUARD || ""),
   autoApprove: bool(env.PINCH_AUTO_APPROVE, false),
+  // Extra hostnames the panel may be reached on (reverse proxy, tailnet).
+  allowedHosts: list(env.PINCH_ALLOWED_HOSTS),
+  // Credential-looking env vars a build may legitimately need.
+  envPassthrough: list(env.PINCH_ENV_PASSTHROUGH),
   shellTimeoutMs: Number(env.PINCH_SHELL_TIMEOUT || 120) * 1000,
 
   telegram: Object.freeze({

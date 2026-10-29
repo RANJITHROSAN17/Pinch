@@ -29,6 +29,12 @@ jobs:
       - name: Unit and agent tests
         run: npm test
 
+      # These two files are the regression suite for docs/AUDIT.md. They run as
+      # part of `npm test` too; naming them separately means a failure points
+      # straight at the finding it protects.
+      - name: Security regressions from the audit
+        run: node --test test/audit.test.js test/http-surface.test.js
+
   smoke:
     runs-on: ubuntu-latest
     steps:
@@ -120,6 +126,44 @@ jobs:
           sleep 2
           test ! -f SHOULD_NOT_EXIST
           echo "denied command correctly did not execute"
+
+      - name: A foreign Origin and a forged Host are refused
+        run: |
+          code=$(curl -s -o /tmp/origin.json -w '%{http_code}' -X POST http://localhost:7777/api/chat \
+            -H 'Origin: https://evil.example' -H 'content-type: application/json' -d '{"text":"hi"}')
+          cat /tmp/origin.json; echo
+          test "$code" = "403" || { echo "cross-site request was not refused ($code)"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:7777/api/health -H 'Host: attacker.example')
+          test "$code" = "403" || { echo "DNS-rebinding host was not refused ($code)"; exit 1; }
+          echo "origin and host checks hold"
+
+      - name: A symlink cannot walk out of the workspace
+        run: |
+          mkdir -p /tmp/pinch-ws-trap && ln -sfn /etc /tmp/pinch-ws-trap/escape
+          PINCH_WORKSPACE=/tmp/pinch-ws-trap node --input-type=module -e "
+            import { resolveInWorkspace, SafePathError } from './src/tools.js';
+            try {
+              console.log('allowed:', resolveInWorkspace('escape/passwd'));
+              console.error('sandbox escaped through a symlink'); process.exit(1);
+            } catch (err) {
+              if (!(err instanceof SafePathError)) throw err;
+              console.log('refused:', err.message.slice(0, 80));
+            }
+          "
+
+      - name: A shell command cannot read the assistant's secrets
+        env:
+          PINCH_KEY: ci-secret-do-not-leak
+          TELEGRAM_TOKEN: 424242:ci-fake-token
+        run: |
+          node --input-type=module -e "
+            import { runShell } from './src/tools.js';
+            const r = await runShell('printenv PINCH_KEY TELEGRAM_TOKEN || echo absent');
+            console.log('child saw:', r.stdout.trim());
+            if (/ci-secret-do-not-leak|ci-fake-token/.test(r.stdout)) {
+              console.error('a credential reached the child process'); process.exit(1);
+            }
+          "
 
       - name: No secrets committed
         run: |

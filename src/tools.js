@@ -9,7 +9,8 @@
  */
 import { spawn } from "node:child_process";
 import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { config } from "./config.js";
 import {
@@ -22,17 +23,52 @@ import { parseWhen, humaniseDuration, formatClock } from "./timeparse.js";
 
 export class SafePathError extends Error {}
 
+/**
+ * Resolve symlinks for the part of the path that exists, keeping the rest
+ * literal. A purely lexical check (`relative()`) is not enough: a symlink
+ * inside the workspace pointing at /etc passes it and then reads /etc/passwd.
+ * This is the difference between a sandbox and a sign saying "sandbox".
+ */
+function canonicalise(target) {
+  let current = target;
+  const missing = [];
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    missing.unshift(basename(current));
+    current = parent;
+  }
+  let real;
+  try {
+    real = realpathSync(current);
+  } catch {
+    real = current;
+  }
+  return missing.length ? resolve(real, ...missing) : real;
+}
+
+function isInside(root, target) {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 export function resolveInWorkspace(input) {
   const raw = String(input || ".").replace(/^~(?=$|\/)/, homedir());
   const abs = isAbsolute(raw) ? resolve(raw) : resolve(config.workspaceRoots[0], raw);
-  const inside = config.workspaceRoots.some((root) => {
-    const rel = relative(root, abs);
-    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-  });
-  if (!inside) {
+
+  // Lexical check first (cheap, catches ../../ escapes with a clear message),
+  // then the real one, which catches symlinks and anything else the filesystem
+  // does behind our back.
+  const lexicalOk = config.workspaceRoots.some((root) => isInside(root, abs));
+  const canonical = canonicalise(abs);
+  const realOk = config.workspaceRoots.some((root) => isInside(canonicalise(root), canonical));
+
+  if (!lexicalOk || !realOk) {
+    const why = lexicalOk && !realOk ? " (a symlink points outside it)" : "";
     throw new SafePathError(
-      `Blocked: ${abs} is outside the allowed workspace (${config.workspaceRoots.join(", ")}).` +
-        ` Add it to PINCH_WORKSPACE in .env if that is a mistake.`
+      `Blocked: ${abs} is outside the allowed workspace${why}. ` +
+        `Allowed roots: ${config.workspaceRoots.join(", ")}. ` +
+        `Add a root to PINCH_WORKSPACE in .env if that is a mistake.`
     );
   }
   return abs;
@@ -40,32 +76,86 @@ export function resolveInWorkspace(input) {
 
 /* ─────────────────────────── catastrophic command guard ────────────────── */
 
+/**
+ * Layered guard rails, weakest to strongest — and be honest about which is which:
+ *
+ *   1. this screen      heuristics; stops the obvious catastrophes
+ *   2. the approval gate a human sees the exact command and says yes
+ *   3. the env scrub     secrets are not in the child's environment at all
+ *
+ * A screen can never be complete (it is a denylist against an infinite space
+ * of shell syntax), so it is written to catch what is *unambiguously* fatal
+ * and to *flag* — not silently allow — anything reaching outside the
+ * workspace. The human gate remains the load-bearing control.
+ */
 const DENY = [
   { re: /\brm\s+(-[a-zA-Z]*\s+)*\/\s*$/, why: "recursive delete of the filesystem root" },
-  { re: /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+(\/|~)\s*(\*)?\s*$/, why: "recursive delete of / or ~" },
-  { re: /\bmkfs(\.\w+)?\b/, why: "formatting a filesystem" },
-  { re: /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk)/, why: "raw write to a block device" },
+  { re: /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+(\/|~|\$HOME|\$\{HOME\})\s*\/?\s*(\*)?\s*$/, why: "recursive delete of / or your home directory" },
+  { re: /\brm\s+-[a-zA-Z]*[rf][a-zA-Z]*\s+(\.|\.\.|\.\/|\.\.\/)\s*$/, why: "recursive delete of the current or parent directory" },
+  { re: /\b(mkfs|fdisk|parted)\b/, why: "partitioning or formatting a filesystem" },
+  { re: /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd)/, why: "raw write to a block device" },
+  { re: />\s*\/dev\/(sd|nvme|disk|hd)/, why: "raw write to a block device" },
   { re: /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, why: "fork bomb" },
-  { re: />\s*\/dev\/(sd|nvme|disk)/, why: "raw write to a block device" },
-  { re: /\bchmod\s+-R\s+777\s+\/\s*$/, why: "unlocking permissions on the whole filesystem" },
+  { re: /\bchmod\s+-R\s+(777|000)\s+\/\s*$/, why: "unlocking or bricking permissions on the whole filesystem" },
+  { re: /\bchown\s+-R\s+[^\s]+\s+\/\s*$/, why: "re-owning the whole filesystem" },
+  { re: /\bfind\s+\/\s[^\n]*-delete/, why: "deleting everything under /" },
+  { re: /\b(shutdown|reboot|halt|poweroff)\b/, why: "powering the machine off (not available to the agent)" },
+  { re: /\b(curl|wget)\b[^\n]*\|\s*(sudo\s+)?(sh|bash|zsh|python|node|perl)\b/, why: "piping a download straight into an interpreter" },
 ];
+
+/** Absolute paths that are outside the workspace — worth a human's attention. */
+export function describeEscapes(command) {
+  const roots = config.workspaceRoots;
+  const outside = new Set();
+  const candidates = String(command).match(/(?:^|[\s'"=])(\/[\w.\-+]+(?:\/[\w.\-+@]*)*)/g) || [];
+  for (const raw of candidates) {
+    const path = raw.trim().replace(/^[\s'"=]/, "");
+    if (/^\/(dev|proc|sys)\b/.test(path)) continue;
+    const inside = roots.some((root) => path === root || path.startsWith(root + "/"));
+    if (!inside) outside.add(path);
+  }
+  return [...outside].slice(0, 4);
+}
 
 export function screenCommand(command) {
   const flat = String(command).replace(/\s+/g, " ").trim();
   for (const rule of DENY) {
     if (rule.re.test(flat)) return { allowed: false, reason: rule.why };
   }
-  return { allowed: true };
+  const escapes = describeEscapes(flat);
+  return { allowed: true, escapes };
 }
 
 /* ────────────────────────────── shell runner ───────────────────────────── */
+
+/**
+ * Build the environment for a child process without handing it the keys to the
+ * kingdom. Everything that looks like a credential is stripped; PATH, HOME and
+ * the rest survive. `PINCH_ENV_PASSTHROUGH=NPM_TOKEN,GITHUB_TOKEN` re-adds
+ * specific names when a build genuinely needs one.
+ */
+const SECRETISH = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|API_KEY|_KEY$|^KEY$|SESSION|COOKIE)/i;
+
+export function childEnv(allow = config.envPassthrough) {
+  const env = {};
+  const allowed = new Set((allow || []).map((s) => s.toUpperCase()));
+  for (const [key, value] of Object.entries(process.env)) {
+    if (SECRETISH.test(key) && !allowed.has(key.toUpperCase())) continue;
+    env[key] = value;
+  }
+  env.PINCH = "1";
+  return env;
+}
 
 export function runShell(command, { cwd, timeoutMs = config.shellTimeoutMs } = {}) {
   return new Promise((resolvePromise) => {
     const child = spawn(command, {
       shell: true,
+      // Own process group, so a timeout can kill the whole tree rather than
+      // just the shell it was launched from. Otherwise `sleep 300 &` survives.
+      detached: process.platform !== "win32",
       cwd: cwd && !isAbsolute(cwd) ? resolve(config.workspaceRoots[0], cwd) : cwd || config.workspaceRoots[0],
-      env: { ...process.env, PINCH: "1" },
+      env: childEnv(),
     });
     let stdout = "";
     let stderr = "";
@@ -73,7 +163,12 @@ export function runShell(command, { cwd, timeoutMs = config.shellTimeoutMs } = {
 
     const timer = setTimeout(() => {
       killed = true;
-      child.kill("SIGKILL");
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        try { child.kill("SIGKILL"); } catch {}
+      }
     }, timeoutMs);
 
     child.stdout.on("data", (d) => {

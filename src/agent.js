@@ -12,7 +12,7 @@
 import { config } from "./config.js";
 import { brain } from "./brain.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError } from "./tools.js";
+import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError, screenCommand } from "./tools.js";
 import { loadSession, appendMessage, loadMemory } from "./store.js";
 import { auditReply, renderGuardNote } from "./guard.js";
 import { addressFor } from "./outbound.js";
@@ -71,7 +71,13 @@ export function pendingApprovals(channel) {
 /* ──────────────────────────────── agent ────────────────────────────────── */
 
 function describeCall(name, args) {
-  if (name === "shell") return `run: ${args.command}${args.cwd ? `  (in ${args.cwd})` : ""}`;
+  if (name === "shell") {
+    const screen = screenCommand(args.command || "");
+    // Surface paths outside the workspace in the prompt itself: the human
+    // decision is the real control, so give them the one detail that matters.
+    const outside = screen.escapes?.length ? `  ⚠ outside workspace: ${screen.escapes.join(", ")}` : "";
+    return `run: ${args.command}${args.cwd ? `  (in ${args.cwd})` : ""}${outside}`;
+  }
   if (name === "write_file") return `write ${args.path} (${Buffer.byteLength(args.content || "", "utf8")} bytes)`;
   return `${name}(${Object.keys(args || {}).join(", ")})`;
 }
