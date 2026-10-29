@@ -8,7 +8,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { config } from "./config.js";
 import { loadMemory } from "./store.js";
-import { formatClock } from "./timeparse.js";
 
 /**
  * Optional profile file (data/profile.md). Same idea as an "about me" note:

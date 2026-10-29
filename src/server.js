@@ -6,7 +6,7 @@
  * cookie the panel sets after one successful load).
  */
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, normalize, extname, resolve, sep } from "node:path";
 import { networkInterfaces } from "node:os";
 import { config } from "./config.js";
@@ -62,6 +62,26 @@ function json(res, code, payload) {
   });
   res.end(body);
 }
+
+/** Keep a request-controlled string from doing anything but reading. */
+const METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+
+/** A method name we recognise, or a constant. Never the caller's string. */
+function methodOf(value) {
+  return METHODS.has(value) ? value : "OTHER";
+}
+
+/** What a client is allowed to be told, by status code. */
+const STATUS_TEXT = {
+  400: "bad request — check the body and the URL encoding",
+  401: "bad or missing PINCH_KEY",
+  403: "refused",
+  404: "not found",
+  405: "method not allowed",
+  413: "request body too large",
+  429: "too many requests — wait a moment",
+  500: "internal error — see the server log",
+};
 
 class HTTPError extends Error {
   constructor(status, message) {
@@ -175,24 +195,30 @@ async function serveStatic(req, res, pathname) {
   if (!target.startsWith(config.publicDir + sep) && target !== join(config.publicDir, "index.html")) {
     return json(res, 403, { error: "forbidden" });
   }
+  // One open, no stat-then-read window: try the path, and if it turns out to
+  // be a directory, serve its index.html. Same behaviour, one fewer race.
   let file = target;
+  let body;
   try {
-    const info = await stat(file);
-    if (info.isDirectory()) file = join(file, "index.html");
-  } catch {
-    return json(res, 404, { error: "not found" });
+    body = await readFile(file);
+  } catch (err) {
+    if (err.code === "EISDIR") {
+      file = join(file, "index.html");
+      try {
+        body = await readFile(file);
+      } catch {
+        return json(res, 404, { error: "not found" });
+      }
+    } else {
+      return json(res, 404, { error: "not found" });
+    }
   }
-  try {
-    const body = await readFile(file);
-    res.writeHead(200, {
-      "content-type": MIME[extname(file)] || "application/octet-stream",
-      "content-length": body.length,
-      "cache-control": "no-cache",
-    });
-    res.end(body);
-  } catch {
-    json(res, 404, { error: "not found" });
-  }
+  res.writeHead(200, {
+    "content-type": MIME[extname(file)] || "application/octet-stream",
+    "content-length": body.length,
+    "cache-control": "no-cache",
+  });
+  res.end(body);
 }
 
 export function lanAddresses() {
@@ -275,7 +301,11 @@ async function handleApi(req, res, url) {
         sessionId,
       });
     } catch (err) {
-      stream.send("error", { message: String(err.message || err) });
+      // The client gets a stable sentence; the detail goes to the server log.
+      // An internal error message is a map of the internals, and this stream is
+      // reachable from any device on the LAN.
+      console.error("[pinch] chat failed:", err);
+      stream.send("error", { message: "the agent hit an internal error — see the server log" });
     }
     return stream.close();
   }
@@ -351,7 +381,19 @@ export function createPinchServer() {
       // Last line of defence: a thrown URIError from a crafted request used to
       // escape as an unhandled rejection and take the socket with it.
       const status = err instanceof HTTPError ? err.status : err instanceof URIError ? 400 : 500;
-      const message = err instanceof URIError ? "malformed URL encoding" : String(err.message || err);
+      // A response never carries text that came out of an exception object,
+      // not even for a 4xx. The sentence is chosen from a table by status
+      // code; anything exception-shaped goes to the log, where it helps.
+      const message = STATUS_TEXT[status] || (status >= 500 ? "internal error — see the server log" : "request refused");
+      // `req.url` here, not the parsed `url`: this catch also covers the case
+      // where parsing the URL itself is what threw. The line is passed as a
+      // constant format with args rather than interpolated, and the URL is
+      // scrubbed of control bytes first, so a request can neither slip a
+      // newline into the log nor smuggle a %s into the format.
+      // What gets logged is chosen from fixed sets and counts: the method if it
+      // is one of the seven, the length of the URL, the status. The request text
+      // itself never reaches the log, so there is nothing to inject.
+      console.error("[pinch] %s request, %d url bytes, failed %d:", methodOf(req.method), req.url.length, status, err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }

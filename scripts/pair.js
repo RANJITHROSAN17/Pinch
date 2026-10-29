@@ -9,13 +9,20 @@
  */
 import { networkInterfaces } from "node:os";
 import { loadEnv } from "../src/config.js";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = loadEnv(ROOT);
-const port = env.PINCH_PORT || "7777";
+// A port is a number, so make it one. Whatever .env said, what reaches a
+// log line below is the result of arithmetic on digits and a range check —
+// never the file's text.
+function readPort(raw) {
+  const n = Number.parseInt(String(raw == null ? "" : raw), 10);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : 7777;
+}
+const port = readPort(env.PINCH_PORT);
 const key = env.PINCH_KEY || "";
 
 const C = {
@@ -53,15 +60,28 @@ try {
   // optional dependency; fall through to the URL
 }
 
-if (qrcode) {
-  qrcode.generate(url, { small: true });
-} else {
-  console.log(C.dim("   (install `qrcode-terminal` for a scannable QR: npm i qrcode-terminal)\n"));
-}
+// The QR carries the full URL, key included — that is a deliberate, local,
+// one-screen transfer. The terminal does not print the key at all: paste a
+// keyed URL into a chat window or a bug report once and the secret that guards
+// this machine is public. Nothing logged below is derived from `key`; the only
+// thing that ever contains it is the QR payload.
+const base = `http://${lan[0] || "localhost"}:${port}`;
 
-console.log(`   ${C.bold(url)}\n`);
+if (qrcode) qrcode.generate(url, { small: true });
+
+console.log(`   ${C.bold(base)}`);
+console.log(
+  key
+    ? C.dim(
+        qrcode
+          ? "   the QR above already includes your key.\n   no camera? append ?key=… — it is the PINCH_KEY line in .env\n"
+          : "   add ?key=… to that URL — it is the PINCH_KEY line in .env\n   (npm i qrcode-terminal shows a QR with the key baked in)\n"
+      )
+    : ""
+);
+
 for (const addr of lan.slice(1)) {
-  console.log(C.dim(`   also: http://${addr}:${port}${key ? `?key=${key}` : ""}`));
+  console.log(C.dim(`   also: http://${addr}:${port}`));
 }
 
 if (!key) {

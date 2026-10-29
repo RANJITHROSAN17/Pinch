@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-103%20passing-4dd6c1" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-110%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-21-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
