@@ -6,7 +6,7 @@
  * cookie the panel sets after one successful load).
  */
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, normalize, extname, resolve, sep } from "node:path";
 import { networkInterfaces } from "node:os";
 import { config } from "./config.js";
@@ -175,24 +175,30 @@ async function serveStatic(req, res, pathname) {
   if (!target.startsWith(config.publicDir + sep) && target !== join(config.publicDir, "index.html")) {
     return json(res, 403, { error: "forbidden" });
   }
+  // One open, no stat-then-read window: try the path, and if it turns out to
+  // be a directory, serve its index.html. Same behaviour, one fewer race.
   let file = target;
+  let body;
   try {
-    const info = await stat(file);
-    if (info.isDirectory()) file = join(file, "index.html");
-  } catch {
-    return json(res, 404, { error: "not found" });
+    body = await readFile(file);
+  } catch (err) {
+    if (err.code === "EISDIR") {
+      file = join(file, "index.html");
+      try {
+        body = await readFile(file);
+      } catch {
+        return json(res, 404, { error: "not found" });
+      }
+    } else {
+      return json(res, 404, { error: "not found" });
+    }
   }
-  try {
-    const body = await readFile(file);
-    res.writeHead(200, {
-      "content-type": MIME[extname(file)] || "application/octet-stream",
-      "content-length": body.length,
-      "cache-control": "no-cache",
-    });
-    res.end(body);
-  } catch {
-    json(res, 404, { error: "not found" });
-  }
+  res.writeHead(200, {
+    "content-type": MIME[extname(file)] || "application/octet-stream",
+    "content-length": body.length,
+    "cache-control": "no-cache",
+  });
+  res.end(body);
 }
 
 export function lanAddresses() {
@@ -275,7 +281,11 @@ async function handleApi(req, res, url) {
         sessionId,
       });
     } catch (err) {
-      stream.send("error", { message: String(err.message || err) });
+      // The client gets a stable sentence; the detail goes to the server log.
+      // An internal error message is a map of the internals, and this stream is
+      // reachable from any device on the LAN.
+      console.error("[pinch] chat failed:", err);
+      stream.send("error", { message: "the agent hit an internal error — see the server log" });
     }
     return stream.close();
   }
@@ -351,7 +361,14 @@ export function createPinchServer() {
       // Last line of defence: a thrown URIError from a crafted request used to
       // escape as an unhandled rejection and take the socket with it.
       const status = err instanceof HTTPError ? err.status : err instanceof URIError ? 400 : 500;
-      const message = err instanceof URIError ? "malformed URL encoding" : String(err.message || err);
+      // 4xx messages are ours and are meant to be read; 5xx ones are not.
+      const message =
+        err instanceof URIError
+          ? "malformed URL encoding"
+          : status < 500
+            ? String(err.message || err)
+            : "internal error — see the server log";
+      if (status >= 500) console.error("[pinch] request failed:", err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }

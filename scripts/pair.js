@@ -9,7 +9,7 @@
  */
 import { networkInterfaces } from "node:os";
 import { loadEnv } from "../src/config.js";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -59,9 +59,21 @@ if (qrcode) {
   console.log(C.dim("   (install `qrcode-terminal` for a scannable QR: npm i qrcode-terminal)\n"));
 }
 
-console.log(`   ${C.bold(url)}\n`);
+// The QR carries the full URL, key included — that is a deliberate, local,
+// one-screen transfer. The terminal does not: paste a keyed URL into a chat
+// window or a bug report once and the secret that guards this machine is
+// public. `--show-key` is the explicit opt-in for people who need the text.
+const showKey = process.argv.includes("--show-key");
+if (showKey && key) {
+  console.log(`   ${C.bold(url)}\n`);
+  console.log(C.dim(`   (this line contains your key — do not paste it anywhere)\n`));
+} else {
+  const hint = !key ? "" : qrcode ? "  (the QR above includes your key)" : "  (add ?key=… from .env)";
+  console.log(`   ${C.bold(`http://${lan[0]}:${port}`)}${C.dim(hint)}\n`);
+  if (key) console.log(C.dim("   need the URL as text? `pinch pair --show-key` prints it, key included.\n"));
+}
 for (const addr of lan.slice(1)) {
-  console.log(C.dim(`   also: http://${addr}:${port}${key ? `?key=${key}` : ""}`));
+  console.log(C.dim(`   also: http://${addr}:${port}`));
 }
 
 if (!key) {

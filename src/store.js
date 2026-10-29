@@ -6,7 +6,7 @@
  * corrupt your conversation history.
  */
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, readdirSync, unlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { config } from "./config.js";
 
 const DATA = config.dataDir;
@@ -73,9 +73,21 @@ export function forget(text) {
 
 const SESSIONS = join(DATA, "sessions");
 
+/**
+ * A session id comes straight off an HTTP request, so it is the one piece of
+ * user input that decides a file path. Allowlist the shape, refuse anything
+ * that could walk out of `data/sessions`, then assert the result really is
+ * inside it — belt, braces, and a check that does not depend on my regex being
+ * perfect forever.
+ */
 export function sessionPath(id) {
-  const safe = String(id).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-  return join(SESSIONS, `${safe}.json`);
+  const raw = String(id ?? "");
+  const safe = raw.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100).replace(/^\.+/, "_");
+  const file = join(SESSIONS, `${safe}.json`);
+  if (!resolve(file).startsWith(resolve(SESSIONS) + sep)) {
+    throw new Error("invalid session id");
+  }
+  return file;
 }
 
 export function loadSession(id) {

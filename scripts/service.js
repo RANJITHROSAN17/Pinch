@@ -8,7 +8,7 @@
  * needs no root; Windows and macOS get copy-paste instructions instead of a
  * script that silently edits the registry).
  */
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -174,8 +174,29 @@ async function checkOllama(url) {
   }
 }
 
+/**
+ * Tokens get pasted from web pages, PDFs and chat apps, which is exactly how
+ * quotes and stray spaces end up inside them. Checking the shape first is
+ * better feedback, and it also means the only thing that ever reaches a
+ * provider is a string that matches that provider's format — not whatever
+ * happened to be on the line in .env.
+ */
+const TOKEN_SHAPE = {
+  telegram: /^\d{6,12}:[A-Za-z0-9_-]{30,}$/,
+  discord: /^[A-Za-z0-9._-]{50,}$/,
+  slack: /^xox[abposr]-[A-Za-z0-9-]{10,}$/,
+};
+
+function shapeOf(kind, token) {
+  const re = TOKEN_SHAPE[kind];
+  if (!token) return "empty";
+  if (re && !re.test(token)) return `${kind} token does not look like a ${kind} token (check for quotes or a missing character)`;
+  return null;
+}
+
 async function checkTelegram(token) {
-  if (!token) return { ok: false, error: "empty" };
+  const bad = shapeOf("telegram", token);
+  if (bad) return { ok: false, error: bad };
   try {
     const { body } = await jsonFetch(`https://api.telegram.org/bot${token}/getMe`);
     if (!body?.ok) return { ok: false, error: body?.description || "invalid token" };
@@ -186,7 +207,8 @@ async function checkTelegram(token) {
 }
 
 async function checkDiscord(token) {
-  if (!token) return { ok: false, error: "empty" };
+  const bad = shapeOf("discord", token);
+  if (bad) return { ok: false, error: bad };
   try {
     const { ok: good, body } = await jsonFetch("https://discord.com/api/v10/users/@me", {
       headers: { authorization: `Bot ${token}` },
@@ -199,7 +221,8 @@ async function checkDiscord(token) {
 }
 
 async function checkSlack(token) {
-  if (!token) return { ok: false, error: "empty" };
+  const bad = shapeOf("slack", token);
+  if (bad) return { ok: false, error: bad };
   try {
     const { body } = await jsonFetch("https://slack.com/api/auth.test", {
       method: "POST",
@@ -415,9 +438,15 @@ async function setup() {
     profileLines.push(line);
   }
   if (profileLines.length) {
-    mkdirSync(dirname(existingProfile), { recursive: true });
-    writeFileSync(existingProfile, profileLines.join("\n") + "\n", "utf8");
-    ok(`saved ${profileLines.length} fact(s) to data/profile.md`);
+    // No existsSync gate: writeFileSync creates or truncates in one step, so
+    // there is no window between "does it exist" and "write it".
+    try {
+      mkdirSync(dirname(existingProfile), { recursive: true });
+      writeFileSync(existingProfile, profileLines.join("\n") + "\n", "utf8");
+      ok(`saved ${profileLines.length} fact(s) to data/profile.md`);
+    } catch (err) {
+      warn(`could not write the profile: ${err.message}`);
+    }
   }
 
   /* 6 ─ voice ──────────────────────────────────────────────────────────── */
@@ -451,10 +480,14 @@ async function setup() {
   values.PINCH_AUTO_APPROVE = autoApprove ? "true" : "false";
 
   /* ── write ───────────────────────────────────────────────────────────── */
-  if (existsSync(ENV_PATH)) {
+  // Copy rather than check-then-copy: if there is no .env, ENOENT tells us so
+  // and there is nothing to back up. Same outcome, no race.
+  try {
     const backup = `${ENV_PATH}.backup-${Date.now()}`;
     copyFileSync(ENV_PATH, backup);
     hint(`previous .env copied to ${backup.split("/").pop()}`);
+  } catch (err) {
+    if (err.code !== "ENOENT") hint(`could not back up the old .env: ${err.message}`);
   }
   writeFileSync(ENV_PATH, renderEnv(values), "utf8");
   console.log(`\n  ${C.green("✔")} wrote ${C.bold(".env")} (permissions: keep this file private)\n`);

@@ -78,7 +78,11 @@ async function main() {
   console.log("");
   log.info(`web panel: ${c.bold(`http://localhost:${config.port}`)}`);
   for (const addr of addrs) {
-    console.log(`  ${c.dim("phone/Mac/PC on same Wi-Fi:")} ${c.bold(`http://${addr.address}:${config.port}`)}${config.authKey ? `?key=${config.authKey.slice(0, 4)}…` : ""}`);
+    // No fragment of the key is printed: terminal scrollback ends up in screen
+    // shares, bug reports and CI logs. `pinch pair` shows the same URL as a QR
+    // generated locally, which is the transfer channel that was intended.
+    const suffix = config.authKey ? c.dim("  (needs your key — run `pinch pair` for a QR)") : "";
+    console.log(`  ${c.dim("phone/Mac/PC on same Wi-Fi:")} ${c.bold(`http://${addr.address}:${config.port}`)}${suffix}`);
   }
   if (!config.authKey) {
     log.warn("PINCH_KEY is empty — anyone on your network can use Pinch. Run `npm run setup` to set one.");

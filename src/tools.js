@@ -8,7 +8,7 @@
  * anything that can mutate the machine MUST set it.
  */
 import { spawn } from "node:child_process";
-import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, stat, mkdir, open } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
@@ -20,6 +20,8 @@ import {
 import { parseWhen, humaniseDuration, formatClock } from "./timeparse.js";
 
 /* ───────────────────────────── path sandboxing ─────────────────────────── */
+
+const GREP_BYTE_CAP = 400_000;
 
 export class SafePathError extends Error {}
 
@@ -455,9 +457,16 @@ export const TOOLS = [
             if (glob === undefined && /\.(png|jpe?g|gif|zip|pdf|mp4|mp3|woff2?|ico|lock)$/i.test(entry.name)) continue;
             let text;
             try {
-              const info = await stat(full);
-              if (info.size > 400_000) continue;
-              text = await readFile(full, "utf8");
+              // Open once and read a bounded prefix: no stat-then-read window,
+              // and a surprise 4 GB file cannot be pulled into memory.
+              const handle = await open(full, "r");
+              try {
+                const buf = Buffer.allocUnsafe(GREP_BYTE_CAP);
+                const { bytesRead } = await handle.read(buf, 0, GREP_BYTE_CAP, 0);
+                text = buf.subarray(0, bytesRead).toString("utf8");
+              } finally {
+                await handle.close();
+              }
             } catch {
               continue;
             }
@@ -528,7 +537,14 @@ export const TOOLS = [
       required: ["expression"],
     },
     async run({ expression }) {
-      return { ok: true, output: `${expression} = ${calculate(expression)}` };
+      // calculate() throws on non-arithmetic — a parser should. The tool layer
+      // is where that becomes a normal { ok:false } the model can read, like
+      // every other tool here.
+      try {
+        return { ok: true, output: `${expression} = ${calculate(expression)}` };
+      } catch (err) {
+        return { ok: false, output: err.message };
+      }
     },
   },
   {
@@ -610,8 +626,27 @@ export const TOOLS = [
         const re = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
         let m;
         while ((m = re.exec(html)) && results.length < 6) {
-          const decode = (s) =>
-            s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+          // Search results are HTML. This text is heading for a model, not a
+          // browser, but "strip tags once" is not stripping: `<<b>>` becomes
+          // `<b>` and a single pass leaves a tag behind (CodeQL was right).
+          // Strip to a fixed point, and never decode &lt;/&gt; back into angle
+          // brackets, so the result cannot contain a tag at all.
+          const decode = (s) => {
+            let out = s;
+            for (let pass = 0; pass < 5; pass++) {
+              const next = out.replace(/<[^>]*>/g, "");
+              if (next === out) break;
+              out = next;
+            }
+            if (/[<>]/.test(out)) out = out.replace(/[<>]/g, "");
+            return out
+              .replace(/&quot;/g, '"')
+              .replace(/&#0*39;/g, "'")
+              .replace(/&#0*27;/g, "'")
+              .replace(/&nbsp;/g, " ")
+              .replace(/&amp;/g, "&") // last: "&amp;lt;" ends as "&lt;", not "<"
+              .trim();
+          };
           const rawUrl = m[1];
           const clean = rawUrl.includes("uddg=")
             ? decodeURIComponent(rawUrl.split("uddg=")[1].split("&")[0])

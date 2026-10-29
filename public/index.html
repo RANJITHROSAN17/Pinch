@@ -284,8 +284,7 @@ function md(src) {
       }
       const escaped = safe.replace(/"/g, "%22").replace(/'/g, "%27").replace(/</g, "%3C").replace(/>/g, "%3E");
       return `<a href="${escaped}" target="_blank" rel="noopener noreferrer" style="color:var(--teal)">${label}</a>`;
-    })
-    .replace(/\n/g, "\n");
+    });
 }
 
 function addMsg(role, text) {
