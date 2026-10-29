@@ -88,6 +88,19 @@ answered by time or by the maintainer's decisions. Each dismissal says which.
 | `FuzzingID` | **Dismissed: won't fix.** Scorecard credits OSS-Fuzz / ClusterFuzzLite integration specifically. This repo has property-based fuzzing in `test/fuzz.test.js` — seeded, 7 properties, 1 500 iterations per run and soaked at 40 000 — running in the normal test suite, which is cheaper and always on rather than a hosted service that needs a container harness. If the input surface ever grows beyond the user's own machine, adopting ClusterFuzzLite is the right answer and this row changes. |
 | `CIIBestPracticesID` | **Dismissed: won't fix.** The badge is an application to OpenSSF Best Practices, filled in by the maintainer at `bestpractices.dev`; it cannot be earned by a commit. Tracked as a maintainer task, not a code task. |
 
+## After the pass: two more that arrived with an older PR
+
+Merging the pending Node-support-policy PR (#3) added two alerts, both dealt
+with in code rather than left to rot:
+
+- `js/file-system-race` on `src/index.js` — the once-per-install Node notice
+  checked for a marker file with `existsSync` and then wrote it. The write now
+  opens with the `wx` flag, so creating the file *is* the existence test.
+- `SASTID` (Scorecard) — "SAST tool detected but not run on all commits". CodeQL
+  ran on pushes to `main` and on pull requests; a push to a short-lived branch
+  was a commit it never saw. `security.yml` now analyses every branch, while
+  Scorecard itself still only publishes from `main`.
+
 ## Re-running the scanners
 
 ```sh

@@ -12,7 +12,7 @@ import { createPinchServer, lanAddresses, status } from "./server.js";
 import { startChannels } from "./channels/index.js";
 import { brain } from "./brain.js";
 import { ensureData, pendingReminders } from "./store.js";
-import { existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { startScheduler } from "./scheduler.js";
 import { nodeSupport } from "./runtime.js";
@@ -88,10 +88,13 @@ async function main() {
     let shown = false;
     try {
       const marker = join(config.dataDir, `notice-node-${support.major}`);
-      shown = existsSync(marker);
-      if (!shown) {
-        mkdirSync(config.dataDir, { recursive: true });
-        writeFileSync(marker, new Date().toISOString());
+      mkdirSync(config.dataDir, { recursive: true });
+      // "wx" creates the file only if it is not there, so the write itself
+      // answers "have I said this before?" — there is no check to race with.
+      try {
+        writeFileSync(marker, new Date().toISOString(), { flag: "wx" });
+      } catch (err) {
+        shown = err.code === "EEXIST";
       }
     } catch {
       shown = false; // unwritable data dir: better to repeat than to stay silent
