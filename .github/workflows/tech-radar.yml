@@ -42,15 +42,26 @@ jobs:
         run: |
           set -euo pipefail
           BODY="$(cat /tmp/radar.md)"
+          ACTIONABLE="$(node scripts/tech-radar.js --json | grep -c '"severity": "\(medium\|low\|high\)"' || true)"
           NUM="$(gh issue list --state open --search 'Tech radar in:title' --json number --jq '.[0].number // empty')"
-          if [ -n "$NUM" ]; then
+
+          if [ "$ACTIONABLE" -gt 0 ]; then
+            if [ -n "$NUM" ]; then
+              gh issue edit "$NUM" --body "$BODY"
+              gh issue comment "$NUM" --body "Refreshed $(date -u +%Y-%m-%d): $ACTIONABLE item(s) to decide on. Nothing changes automatically — this is a list of decisions, not a changelog."
+              echo "updated issue #$NUM"
+            else
+              gh issue create --title "🦞 Tech radar (auto-updated weekly)" --body "$BODY"
+            fi
+          elif [ -n "$NUM" ]; then
+            # A clean sweep closes the issue rather than leaving a stale list open.
+            # If something drifts again, next week opens a fresh one.
             gh issue edit "$NUM" --body "$BODY"
-            gh issue comment "$NUM" --body "Refreshed $(date -u +%Y-%m-%d). Nothing is changed automatically — this is a list of decisions, not a changelog."
-            echo "updated issue #$NUM"
+            gh issue close "$NUM" --reason completed \
+              --comment "✅ Nothing has drifted as of $(date -u +%Y-%m-%d). This issue closes itself when a sweep comes back clean, and a new one opens if something later needs a decision."
+            echo "closed issue #$NUM — nothing actionable"
           else
-            gh issue create \
-              --title "🦞 Tech radar (auto-updated weekly)" \
-              --body "$BODY"
+            echo "nothing actionable and no issue open: staying quiet"
           fi
 
       - name: Summarise in the run log

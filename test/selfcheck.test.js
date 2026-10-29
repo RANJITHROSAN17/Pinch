@@ -57,4 +57,11 @@ test("the tech radar produces parseable findings without a model", { timeout: 60
   assert.ok(Array.isArray(report.findings));
   assert.ok(report.findings.every((f) => ["high", "medium", "low", "info"].includes(f.severity)));
   assert.ok(typeof report.engineMin === "string" && report.engineMin.length > 0);
+
+  // Issue #1 was "Node 22 is in maintenance — plan the next major bump". The
+  // plan now exists (docs/SUPPORT.md + src/runtime.js), so the radar must stop
+  // reporting it as drift. If this assertion starts failing, either the policy
+  // quietly expired or someone deleted it — both worth a red build.
+  const runtimeDrift = report.findings.filter((f) => f.area === "runtime" && f.severity !== "info");
+  assert.deepEqual(runtimeDrift, [], `runtime drift reported: ${JSON.stringify(runtimeDrift)}`);
 });

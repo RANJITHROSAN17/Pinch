@@ -35,8 +35,16 @@ calendar ever disagree, the calendar wins and the workflow says so.
 
 - **Node 20:** `npm install` warns about `engines`. You can force it, and Pinch may well run
   — but no test covers that combination, and no security patch will reach you.
-- **Node 22 (maintenance tier):** works, is tested, and will warn you once — see the
-  next scheduled change above for the date it stops being supported.
+- **Node 22 (maintenance tier):** works, is tested, and prints **one line at startup** —
+  once per install, not on every boot — saying it is in maintenance and when that ends:
+
+  ```
+  ▲ Node 22 is in maintenance — security fixes only, until 2027-04-30.
+    That is still supported; plan the move to Node 26 before then. See docs/SUPPORT.md.
+  ```
+
+  Version 24 and 26 say nothing at all. Nagging someone for running a supported LTS is
+  not support.
 
 ## Operating systems
 
