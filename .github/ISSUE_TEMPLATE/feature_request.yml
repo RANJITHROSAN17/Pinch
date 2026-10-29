@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a capability, a channel, or an improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things to know before filing: Pinch takes **no new runtime dependencies** by design,
+        and every capability that changes your machine must sit behind the approval gate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Pinch makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: A new tool, a new channel, a change in behaviour?
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of change
+      options:
+        - New tool (agent capability)
+        - New chat channel
+        - Better prompt / personality
+        - Safety, approvals or sandboxing
+        - Docs / setup experience
+        - Performance
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: This does not require a new runtime dependency (or I explain why it must)
+        - label: If it can change my machine, I understand it will need an approval prompt

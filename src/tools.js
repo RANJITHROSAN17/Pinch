@@ -12,7 +12,11 @@ import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { config } from "./config.js";
-import { remember, loadMemory, forget, loadTasks, saveTask } from "./store.js";
+import {
+  remember, loadMemory, forget, loadTasks, saveTask,
+  addReminder, pendingReminders, removeReminder,
+} from "./store.js";
+import { parseWhen, humaniseDuration, formatClock } from "./timeparse.js";
 
 /* ───────────────────────────── path sandboxing ─────────────────────────── */
 
@@ -220,6 +224,17 @@ export async function treeSummary(root, { maxDepth = 3, maxEntries = 120 } = {})
 /* ──────────────────────────────── tool defs ────────────────────────────── */
 
 const stringProp = (description) => ({ type: "string", description });
+
+/** Fire-and-forget opener for a URL, per platform. Never shells out user text. */
+function openUrl(url) {
+  const opener =
+    process.platform === "darwin" ? ["open", [url]]
+    : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]]
+    : ["xdg-open", [url]];
+  const child = spawn(opener[0], opener[1], { detached: true, stdio: "ignore" });
+  child.on("error", () => {});
+  child.unref();
+}
 
 export const TOOLS = [
   {
@@ -556,6 +571,167 @@ export const TOOLS = [
       match.done = true;
       saveTask(match);
       return { ok: true, output: `Done: ${match.title}` };
+    },
+  },
+  {
+    name: "remind",
+    description:
+      "Set a reminder or timer that is delivered later to the same chat the request came from. " +
+      "Pass the user's own time phrase; do not convert it yourself. Understands 'in 20 minutes', " +
+      "'in 2 hours', 'at 6pm', 'tomorrow at 9am', '2026-11-05 14:30'.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: stringProp("What to remind them about, e.g. 'call mom'"),
+        when: stringProp("The time phrase as the user said it, e.g. 'in 30 minutes' or 'at 6pm'"),
+      },
+      required: ["text", "when"],
+    },
+    async run({ text, when }, ctx = {}) {
+      const parsed = parseWhen(when);
+      if (!parsed) {
+        return {
+          ok: false,
+          output:
+            `I could not understand "${when}" as a time. Do not guess a time — ask the user to ` +
+            `restate it (examples: "in 20 minutes", "at 6pm", "tomorrow at 9am").`,
+        };
+      }
+      const reminder = {
+        id: `r_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        text: String(text).slice(0, 300),
+        at: parsed.at.toISOString(),
+        address: ctx.target || "web:main",
+        channel: ctx.channel || "web",
+        sessionId: ctx.sessionId || null,
+        fired: false,
+        createdAt: new Date().toISOString(),
+      };
+      addReminder(reminder);
+      const inHowLong = humaniseDuration(parsed.at.getTime() - Date.now());
+      return {
+        ok: true,
+        output:
+          `Reminder set for ${formatClock(parsed.at, config.timezone)} (in ${inHowLong}): "${reminder.text}". ` +
+          `Delivering to ${reminder.address}.`,
+      };
+    },
+  },
+  {
+    name: "list_reminders",
+    description: "List reminders that have not fired yet, soonest first.",
+    parameters: { type: "object", properties: {} },
+    async run() {
+      const list = pendingReminders().sort((a, b) => String(a.at).localeCompare(String(b.at)));
+      if (!list.length) return { ok: true, output: "No pending reminders." };
+      return {
+        ok: true,
+        output: list
+          .map((r) => `- ${formatClock(new Date(r.at), config.timezone)} · ${r.text} (${r.address})`)
+          .join("\n"),
+      };
+    },
+  },
+  {
+    name: "cancel_reminder",
+    description: "Cancel pending reminders whose text matches a keyword.",
+    parameters: {
+      type: "object",
+      properties: { query: stringProp("Keyword from the reminder text") },
+      required: ["query"],
+    },
+    async run({ query }) {
+      const needle = String(query).toLowerCase();
+      const matches = pendingReminders().filter((r) => r.text.toLowerCase().includes(needle));
+      if (!matches.length) return { ok: false, output: `No pending reminder matches "${query}".` };
+      for (const r of matches) removeReminder(r.id);
+      return { ok: true, output: `Cancelled ${matches.length} reminder(s): ${matches.map((r) => r.text).join(", ")}` };
+    },
+  },
+  {
+    name: "open_url",
+    description:
+      "Open a web page in the user's default browser on this machine. Only http(s). Use for " +
+      "'open YouTube', 'show me the docs', 'open my repo'.",
+    parameters: {
+      type: "object",
+      properties: { url: stringProp("Full http(s) URL") },
+      required: ["url"],
+    },
+    async run({ url }) {
+      let parsed;
+      try {
+        parsed = new URL(String(url));
+      } catch {
+        return { ok: false, output: `Not a valid URL: ${url}` };
+      }
+      if (!/^https?:$/.test(parsed.protocol)) {
+        return { ok: false, output: "Only http and https URLs can be opened." };
+      }
+      openUrl(parsed.toString());
+      return { ok: true, output: `Opened ${parsed.toString()} in the default browser.` };
+    },
+  },
+  {
+    name: "screenshot",
+    dangerous: true,
+    description:
+      "Capture the screen to an image file inside the workspace and return its path. " +
+      "Use when the user asks what is on their screen or wants a screenshot of something.",
+    parameters: {
+      type: "object",
+      properties: { path: stringProp("Optional output path (default data/screens/shot-<time>.png)") },
+    },
+    async run({ path }) {
+      const target = resolveInWorkspace(path || `screens/shot-${Date.now()}.png`);
+      await mkdir(dirname(target), { recursive: true });
+      const cmd =
+        process.platform === "darwin" ? `screencapture -x "${target}"`
+        : process.platform === "win32"
+          ? `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; ` +
+            `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; ` +
+            `$g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
+            `$bmp.Save('${target.replace(/\\/g, "\\\\")}')"`
+          : `(command -v gnome-screenshot >/dev/null && gnome-screenshot -f "${target}") || ` +
+            `(command -v scrot >/dev/null && scrot -o "${target}") || ` +
+            `(command -v import >/dev/null && import -window root "${target}") || ` +
+            `(command -v grim >/dev/null && grim "${target}")`;
+      const res = await runShell(cmd, { timeoutMs: 15_000 });
+      if (!res.ok) {
+        return {
+          ok: false,
+          output:
+            `Could not take a screenshot (${res.stderr.trim() || "no capture tool found"}). ` +
+            `On Linux install gnome-screenshot, scrot, imagemagick or grim.`,
+        };
+      }
+      return { ok: true, output: `Screenshot saved to ${relative(config.workspaceRoots[0], target) || target}` };
+    },
+  },
+  {
+    name: "system_control",
+    dangerous: true,
+    description:
+      "Lock or sleep the user's computer. Only ever after they explicitly ask. " +
+      "Actions: 'lock' or 'sleep'. Shutdown is deliberately not available.",
+    parameters: {
+      type: "object",
+      properties: { action: { type: "string", enum: ["lock", "sleep"] } },
+      required: ["action"],
+    },
+    async run({ action }) {
+      const map = {
+        darwin: { lock: "pmset displaysleepnow", sleep: "pmset sleepnow" },
+        win32: {
+          lock: "rundll32.exe user32.dll,LockWorkStation",
+          sleep: "rundll32.exe powrprof.dll,SetSuspendState 0,1,0",
+        },
+        linux: { lock: "loginctl lock-session", sleep: "systemctl suspend" },
+      };
+      const cmd = (map[process.platform] || map.linux)[action];
+      if (!cmd) return { ok: false, output: `Unknown action: ${action}` };
+      const res = await runShell(cmd, { timeoutMs: 10_000 });
+      return { ok: res.ok, output: res.ok ? `Done: ${action}.` : `Failed: ${res.stderr.trim()}` };
     },
   },
 ];

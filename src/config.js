@@ -78,6 +78,10 @@ export const config = Object.freeze({
   }),
 
   workspaceRoots: workspaceRoots.length ? workspaceRoots : [homedir()],
+  // Optional user profile, like an about_me file: injected into the prompt.
+  profilePath: env.PINCH_PROFILE || join(env.PINCH_DATA || join(ROOT, "data"), "profile.md"),
+  // Set PINCH_GUARD=off to silence the post-reply honesty check (not advised).
+  disableGuard: /^(0|false|off|no)$/i.test(env.PINCH_GUARD || ""),
   autoApprove: bool(env.PINCH_AUTO_APPROVE, false),
   shellTimeoutMs: Number(env.PINCH_SHELL_TIMEOUT || 120) * 1000,
 

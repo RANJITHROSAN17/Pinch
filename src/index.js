@@ -11,7 +11,8 @@ import { config } from "./config.js";
 import { createPinchServer, lanAddresses, status } from "./server.js";
 import { startChannels } from "./channels/index.js";
 import { brain } from "./brain.js";
-import { ensureData } from "./store.js";
+import { ensureData, pendingReminders } from "./store.js";
+import { startScheduler } from "./scheduler.js";
 
 const c = {
   coral: (s) => `\x1b[38;5;209m${s}\x1b[0m`,
@@ -84,17 +85,25 @@ async function main() {
   }
   console.log("");
 
+  // ── scheduler (reminders) ──────────────────────────────────────────────
+  // Starts before the channels so a reminder that came due while Pinch was
+  // off fires as soon as there is something to deliver it to.
+  const scheduler = startScheduler(log);
+
   // ── channels ───────────────────────────────────────────────────────────
   const { status: channelStatus, stopAll } = await startChannels(log);
   Object.assign(status.channels, channelStatus);
   const on = Object.entries(channelStatus).filter(([, v]) => v === "on").map(([k]) => k);
   log.info(`channels live: ${on.join(", ") || "web only"}`);
+  const pending = pendingReminders().length;
+  if (pending) log.info(`reminders pending: ${pending}`);
   console.log(c.dim(`\n   workspace: ${config.workspaceRoots.join(", ")}`));
   console.log(c.dim(`   approvals: ${config.autoApprove ? "AUTO-APPROVE ON (risky)" : "ask in chat"}`));
   console.log(c.dim(`   data: ${config.dataDir}\n   ctrl-c to stop\n`));
 
   const shutdown = () => {
     console.log(c.dim("\n🦞 pinching out…"));
+    scheduler.stop();
     stopAll();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1500).unref();

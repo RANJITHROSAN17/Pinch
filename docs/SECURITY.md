@@ -25,7 +25,15 @@ Pinch is an agent with a shell. Read this before you leave it running.
    with a stated reason, before approval is even requested.
 4. **No dynamic code** — the calculator is a shunting-yard parser. There is no `eval`,
    no `new Function`, nowhere.
-5. **Resource bounds** — 8 tool rounds per turn, 120 s per command, stdout capped at 60 KB,
+5. **Honesty audit (`src/guard.js`)** — after every reply, code checks the model's claims
+   against the tools that actually ran: "I sent it" with no tool that sends, an email address
+   nobody supplied, a URL nothing fetched, or "I remember…" with empty memory. Mismatches are
+   appended to the reply for the user to see. This defends against a *model* being wrong, which
+   prompting alone does not fix.
+6. **Reminder delivery is addressed, not broadcast** — a reminder is pinned to the
+   `channel:target` that created it, so it cannot leak into another chat. If that channel is
+   offline it falls back to the local web panel and logs why; it never silently disappears.
+7. **Resource bounds** — 8 tool rounds per turn, 120 s per command, stdout capped at 60 KB,
    sessions capped at 200 messages, memory at 500 facts.
 
 ## Known risks you accept by running it
@@ -39,6 +47,11 @@ Pinch is an agent with a shell. Read this before you leave it running.
   Use a secondary number or skip it.
 - **Cloud providers.** `LLM_PROVIDER=openai` sends your prompts to that endpoint. Visible in
   `.env`, never the default.
+- **Screenshots.** The `screenshot` tool captures the whole screen, which may include things you
+  did not intend to show a model. It is behind the approval gate and the file stays local, but
+  read the prompt before allowing it.
+- **`system_control`** can lock or sleep the machine. Shutdown and reboot are deliberately not
+  implemented, so a confused model cannot power off a workstation mid-job.
 
 ## Hardening checklist
 
@@ -48,3 +61,5 @@ Pinch is an agent with a shell. Read this before you leave it running.
 - [ ] allowlists filled for every enabled channel
 - [ ] `data/` backed up or excluded from anything you sync to a cloud drive
 - [ ] if you only use one machine: `PINCH_HOST=127.0.0.1`
+- [ ] honesty guard left on (`PINCH_GUARD=on`)
+- [ ] `data/profile.md` contains nothing you would not put in a plain text file

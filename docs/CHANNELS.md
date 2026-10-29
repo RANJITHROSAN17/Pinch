@@ -81,3 +81,19 @@ Open `http://<host>:7777?key=YOUR_KEY` once per device. The key is stored in a c
 Tip: put the panel behind [Tailscale](https://tailscale.com) if you want it reachable
 outside your home network without exposing a port to the internet. Do **not** port-forward
 Pinch directly to the public internet.
+
+### Pairing: `pinch pair`
+
+Prints the LAN URL with the key attached, plus a QR code generated **locally** by
+`qrcode-terminal` (`npm i qrcode-terminal`). The QR is never sent to a third-party QR service —
+that would be an amusing way to hand your access key to someone else.
+
+### Wake word
+
+The 👂 toggle in the panel header enables "Hey Pinch". It uses the browser's own recogniser in
+continuous mode and matches the phrase **on your device**; nothing leaves the machine until a
+command actually follows the wake word. It stops when the tab or app closes, and the toggle is
+off by default on every device — always-on microphones should be a choice, not a default.
+
+On iOS, Safari may pause recognition when the screen locks; keep the screen on for hands-free
+use, or use the mic button on the lock screen's dictation instead.

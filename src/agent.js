@@ -13,7 +13,10 @@ import { config } from "./config.js";
 import { brain } from "./brain.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError } from "./tools.js";
-import { loadSession, appendMessage } from "./store.js";
+import { loadSession, appendMessage, loadMemory } from "./store.js";
+import { auditReply, renderGuardNote } from "./guard.js";
+import { addressFor } from "./outbound.js";
+import { config as cfg } from "./config.js";
 
 const MAX_ROUNDS = 8;
 const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -81,7 +84,7 @@ function describeCall(name, args) {
  * @param {string} opts.channel
  * @param {(event: object) => void} [opts.onEvent] live progress for the UI
  */
-export async function runAgent({ sessionId, text, channel = "web", onEvent = () => {} }) {
+export async function runAgent({ sessionId, text, channel = "web", target = "", onEvent = () => {} }) {
   const session = loadSession(sessionId);
   const history = session.messages
     .filter((m) => m.role === "user" || m.role === "assistant")
@@ -97,14 +100,25 @@ export async function runAgent({ sessionId, text, channel = "web", onEvent = () 
   ];
 
   const trace = [];
+  const toolOutputs = [];
   let finalText = "";
+  const ctx = { channel, target: addressFor(channel, target), sessionId };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     onEvent({ type: "status", message: round === 0 ? "thinking" : "thinking again" });
 
     let out;
+    let streamed = "";
     try {
-      out = await brain.chat(messages, { tools: toolSchemas() });
+      // Stream the model's words straight to whoever is waiting. Tool rounds
+      // usually produce no text, so this costs nothing when it does not apply.
+      out = await brain.chat(messages, {
+        tools: toolSchemas(),
+        onDelta: (chunk) => {
+          streamed += chunk;
+          onEvent({ type: "delta", text: chunk });
+        },
+      });
     } catch (err) {
       finalText =
         `🦞 My brain is unreachable: ${err.message}\n\n` +
@@ -149,7 +163,7 @@ export async function runAgent({ sessionId, text, channel = "web", onEvent = () 
       onEvent({ type: "tool", name: tool.name, label });
       let result;
       try {
-        result = await tool.run(call.arguments || {});
+        result = await tool.run(call.arguments || {}, ctx);
       } catch (err) {
         result = {
           ok: false,
@@ -160,6 +174,7 @@ export async function runAgent({ sessionId, text, channel = "web", onEvent = () 
         };
       }
 
+      toolOutputs.push(String(result.output));
       trace.push({ tool: tool.name, args: call.arguments, ok: result.ok, output: String(result.output).slice(0, 400) });
       onEvent({ type: "tool_done", name: tool.name, ok: result.ok, preview: String(result.output).slice(0, 300) });
 
@@ -176,8 +191,24 @@ export async function runAgent({ sessionId, text, channel = "web", onEvent = () 
       "Ask me to continue and I'll pick up from here.";
   }
 
-  appendMessage(sessionId, { role: "assistant", content: finalText, trace });
-  return { text: finalText, trace, sessionId };
+  // Post-hoc honesty check: does the reply match what actually happened?
+  let guard = { flags: [], clean: true };
+  if (!cfg.disableGuard && !/^🦞 My brain is unreachable/.test(finalText)) {
+    guard = auditReply({
+      reply: finalText,
+      trace,
+      memoryFacts: loadMemory().facts,
+      userText: text,
+      toolOutput: toolOutputs.join("\n"),
+    });
+    if (!guard.clean) {
+      finalText += renderGuardNote(guard.flags);
+      onEvent({ type: "guard", flags: guard.flags });
+    }
+  }
+
+  appendMessage(sessionId, { role: "assistant", content: finalText, trace, guard: guard.flags });
+  return { text: finalText, trace, sessionId, guard: guard.flags };
 }
 
 /* ──────────────────────────── one-shot helper ──────────────────────────── */

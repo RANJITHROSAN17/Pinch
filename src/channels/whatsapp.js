@@ -15,6 +15,7 @@
  */
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
+import { registerSender } from "../outbound.js";
 
 export async function startWhatsApp(log = console) {
   if (!config.whatsapp.enabled) return null;
@@ -71,7 +72,10 @@ export async function startWhatsApp(log = console) {
         if (qrcode) qrcode.generate(qr, { small: true });
         else log.info?.(qr);
       }
-      if (connection === "open") log.info?.("whatsapp: linked ✔");
+      if (connection === "open") {
+        registerSender("whatsapp", (target, text) => sock.sendMessage(target, { text }));
+        log.info?.("whatsapp: linked ✔");
+      }
       if (connection === "close") {
         const code = lastDisconnect?.error?.output?.statusCode;
         const loggedOut = code === DisconnectReason.loggedOut;
@@ -115,6 +119,7 @@ export async function startWhatsApp(log = console) {
             channel: "whatsapp",
             text,
             sessionId: `whatsapp-${from}`,
+            target: from,
             send: (t) => sock.sendMessage(from, { text: t }),
           });
         } catch (err) {

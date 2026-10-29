@@ -15,7 +15,9 @@ import { runAgent, answerApproval, pendingApprovals } from "./agent.js";
 import {
   ensureData, loadMemory, saveMemory, remember, forget,
   listSessions, loadSession, deleteSession, loadTasks,
+  loadReminders, pendingReminders, removeReminder,
 } from "./store.js";
+import { registerSender } from "./outbound.js";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -30,6 +32,24 @@ const MIME = {
 
 const started = Date.now();
 export const status = { channels: {} };
+
+/* ────────────────────────── live event bus ─────────────────────────────── */
+// One place reminders, approvals and anything future can reach an open panel.
+const subscribers = new Set();
+
+export function broadcast(event, data) {
+  for (const send of subscribers) {
+    try {
+      send(event, data);
+    } catch {
+      subscribers.delete(send);
+    }
+  }
+}
+
+registerSender("web", async (target, text) => {
+  broadcast("reminder", { text, target, at: new Date().toISOString() });
+});
 
 /* ────────────────────────────── helpers ────────────────────────────────── */
 
@@ -133,6 +153,9 @@ async function handleApi(req, res, url) {
         : config.llm.openaiModel,
       channels: status.channels,
       memoryFacts: loadMemory().facts.length,
+      pendingReminders: pendingReminders().length,
+      streaming: true,
+      guard: !config.disableGuard,
       uptimeSeconds: Math.round((Date.now() - started) / 1000),
       workspace: config.workspaceRoots,
     });
@@ -174,9 +197,15 @@ async function handleApi(req, res, url) {
         sessionId,
         text,
         channel: "web",
+        target: sessionId,
         onEvent: (event) => stream.send("step", event),
       });
-      stream.send("final", { text: result.text, trace: result.trace, sessionId });
+      stream.send("final", {
+        text: result.text,
+        trace: result.trace,
+        guard: result.guard || [],
+        sessionId,
+      });
     } catch (err) {
       stream.send("error", { message: String(err.message || err) });
     }
@@ -187,6 +216,38 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     const ok = answerApproval(String(body.id || ""), Boolean(body.allowed));
     return json(res, ok ? 200 : 404, { ok });
+  }
+
+  if (path === "/api/events") {
+    const stream = sse(res);
+    const send = (event, data) => stream.send(event, data);
+    subscribers.add(send);
+    stream.send("hello", { at: new Date().toISOString(), pending: pendingReminders().length });
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 25_000);
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      subscribers.delete(send);
+    });
+    return; // stays open
+  }
+
+  if (path === "/api/reminders") {
+    if (req.method === "GET") {
+      return json(res, 200, {
+        pending: pendingReminders().sort((a, b) => String(a.at).localeCompare(String(b.at))),
+        recent: loadReminders().filter((r) => r.fired).slice(-10),
+      });
+    }
+    if (req.method === "DELETE") {
+      const id = url.searchParams.get("id");
+      return json(res, 200, { removed: id ? removeReminder(id) : 0 });
+    }
   }
 
   if (path === "/api/approvals" && req.method === "GET") {

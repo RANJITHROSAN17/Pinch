@@ -7,6 +7,7 @@
  */
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
+import { registerSender } from "../outbound.js";
 
 const API = "https://slack.com/api";
 
@@ -80,6 +81,7 @@ export function startSlack(log = console) {
             channel: "slack",
             text,
             sessionId: `slack-${channel}`,
+            target: channel,
             // Answer in the same thread when the message was in one.
             send: (t) => send(channel, t, message.thread_ts || undefined),
           });
@@ -97,6 +99,7 @@ export function startSlack(log = console) {
     } catch (err) {
       return log.warn?.(`slack: could not connect — ${err.message}`);
     }
+    registerSender("slack", (target, text) => send(target, text));
     while (!stopped) {
       await tick();
       await new Promise((r) => setTimeout(r, 3500));

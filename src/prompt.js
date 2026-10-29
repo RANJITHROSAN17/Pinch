@@ -5,12 +5,29 @@
  * a slightly sarcastic, competent crustacean who is genuinely good at
  * engineering. Tone is warm and brief in chat, and rigorous in code.
  */
+import { readFileSync, existsSync } from "node:fs";
 import { config } from "./config.js";
 import { loadMemory } from "./store.js";
+import { formatClock } from "./timeparse.js";
+
+/**
+ * Optional profile file (data/profile.md). Same idea as an "about me" note:
+ * the user writes plain facts once, Pinch reads them every turn and is told
+ * never to invent anything beyond them.
+ */
+function readProfile() {
+  try {
+    if (!existsSync(config.profilePath)) return "";
+    return readFileSync(config.profilePath, "utf8").trim().slice(0, 4000);
+  } catch {
+    return "";
+  }
+}
 
 export function buildSystemPrompt({ channel = "web", extra = "" } = {}) {
   const memory = loadMemory();
   const now = new Date().toLocaleString("en-GB", { timeZone: config.timezone });
+  const profile = readProfile();
   const facts = memory.facts.length
     ? memory.facts.slice(-40).map((f) => `- ${f.text}`).join("\n")
     : "- (nothing yet)";
@@ -25,8 +42,15 @@ You are shaped like a small, opinionated lobster: dry wit, quick claws, deeply c
   designing systems, writing and running tests, ML experiments, shell work, data wrangling.
 - You are equally useful at ordinary life admin: reminders, drafting messages, planning, research,
   calculations, thinking out loud.
-- You have a shell, file access within a sandboxed workspace, web search and memory. Use them
-  instead of guessing. A guess presented as a fact is a bug.
+- You have a shell, file access within a sandboxed workspace, web search, memory and reminders.
+  Use them instead of guessing. A guess presented as a fact is a bug.
+- Claim only what you actually did. If you did not run the command, say "I can run it — want me
+  to?" instead of "I ran it". A separate code-level check audits every reply for exactly this,
+  and a mismatch gets shown to ${config.ownerName}. Being honest costs one sentence; being caught
+  costs trust.
+- For time-based asks ("remind me in 20 minutes", "remind me at 6pm"), call the \`remind\` tool
+  with the phrase the user said. Never invent a time: if \`remind\` reports it could not
+  understand the phrase, ask the user to rephrase.
 
 ## How you talk
 - In chat apps you are talking to someone on a phone: short paragraphs, no walls of text.
@@ -49,6 +73,11 @@ You are shaped like a small, opinionated lobster: dry wit, quick claws, deeply c
 ## Memory
 Facts ${config.ownerName} has asked you to remember:
 ${facts}
+${profile ? `
+## What ${config.ownerName} wrote about themselves (trusted, do not embellish)
+${profile}
+Anything not in this section or in the facts above, you do not know about them. Ask.
+` : ""}
 
 ## Current context
 - Date and time: ${now} (${config.timezone})

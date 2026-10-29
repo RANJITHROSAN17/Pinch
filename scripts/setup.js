@@ -16,7 +16,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
@@ -224,19 +224,19 @@ async function setup() {
       🦞  ${C.bold("P I N C H")} ${C.dim("setup")}
    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀`));
   console.log(`
-   Six short steps. Everything is optional except your name and a brain.
+   Seven short steps. Everything is optional except your name and a brain.
    Press ${C.bold("Enter")} to accept the default shown in brackets.
    ${C.dim("Nothing is uploaded anywhere by this script.")}
 `);
 
   /* 1 ─ identity ───────────────────────────────────────────────────────── */
-  section("1/6 · Who am I working for?", "Just so Pinch knows what to call you.");
+  section("1/7 · Who am I working for?", "Just so Pinch knows what to call you.");
   values.OWNER_NAME = await ask("Your name", values.OWNER_NAME || "friend");
   const guessTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   values.OWNER_TIMEZONE = await ask("Timezone", values.OWNER_TIMEZONE || guessTz);
 
   /* 2 ─ brain ──────────────────────────────────────────────────────────── */
-  section("2/6 · The brain", "The model that does the thinking. Local is private and free.");
+  section("2/7 · The brain", "The model that does the thinking. Local is private and free.");
   const provider = await choose(
     "How should Pinch think?",
     [
@@ -295,13 +295,13 @@ async function setup() {
   }
 
   /* 3 ─ workspace ──────────────────────────────────────────────────────── */
-  section("3/6 · Where may Pinch work?", "Reading, writing and shell commands are confined to these folders.");
+  section("3/7 · Where may Pinch work?", "Reading, writing and shell commands are confined to these folders.");
   hint(`current: ${values.PINCH_WORKSPACE || "(your home directory)"}`);
   const ws = await ask("Workspace root(s), comma separated", values.PINCH_WORKSPACE || "");
   if (ws) values.PINCH_WORKSPACE = ws;
 
   /* 4 ─ chat apps ──────────────────────────────────────────────────────── */
-  section("4/6 · Chat apps", "Message Pinch from the apps you already use. Skip any you don't want.");
+  section("4/7 · Chat apps", "Message Pinch from the apps you already use. Skip any you don't want.");
 
   // Telegram
   console.log(`\n  ${C.bold("Telegram")} ${C.dim("— easiest, ~2 minutes")}`);
@@ -398,8 +398,30 @@ async function setup() {
     values.WHATSAPP_ENABLED = "false";
   }
 
-  /* 5 ─ voice ──────────────────────────────────────────────────────────── */
-  section("5/6 · Voice", "Talking to Pinch from your phone.");
+  /* 5 ─ about you ─────────────────────────────────────────────────────── */
+  section("5/7 · Tell Pinch about you", "Written once, read every turn, never invented beyond.");
+  hint("Like an about-me note. One fact per line, blank line to finish.");
+  hint("Example: Name: Ranjith · City: Chennai · Work: ML engineer at Accenture");
+  const existingProfile = join(ROOT, "data", "profile.md");
+  const profileLines = [];
+  if (existsSync(existingProfile)) {
+    const current = readFileSync(existingProfile, "utf8").trim();
+    ok(`you already have a profile (${current.split("\n").length} line(s)) — press Enter to keep it`);
+    if (current) hint(current.split("\n").slice(0, 3).join(" · ").slice(0, 150));
+  }
+  for (let i = 0; i < 6; i++) {
+    const line = (await question(`  ${C.dim(i === 0 ? "fact" : "more (blank to stop)")} ${C.coral("›")} `)).trim();
+    if (!line) break;
+    profileLines.push(line);
+  }
+  if (profileLines.length) {
+    mkdirSync(dirname(existingProfile), { recursive: true });
+    writeFileSync(existingProfile, profileLines.join("\n") + "\n", "utf8");
+    ok(`saved ${profileLines.length} fact(s) to data/profile.md`);
+  }
+
+  /* 6 ─ voice ──────────────────────────────────────────────────────────── */
+  section("6/7 · Voice", "Talking to Pinch from your phone.");
   hint("The web panel has a mic button that uses your phone's own speech engine:");
   hint("· iPhone/iPad — Safari (iOS 14.5+), tap 🎙️, speak, it sends automatically");
   hint("· Android   — Chrome, tap 🎙️, speak, it sends automatically");
@@ -412,7 +434,7 @@ async function setup() {
   if (whisper) values.WHISPER_URL = whisper;
 
   /* 6 ─ security ──────────────────────────────────────────────────────── */
-  section("6/6 · Locking it down", "Pinch listens on your LAN so your phone can reach it.");
+  section("7/7 · Locking it down", "Pinch listens on your LAN so your phone can reach it.");
   values.PINCH_PORT = await ask("Port", values.PINCH_PORT || "7777");
   values.PINCH_HOST = "0.0.0.0";
   if (!values.PINCH_KEY) values.PINCH_KEY = randomBytes(18).toString("hex");

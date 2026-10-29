@@ -5,7 +5,8 @@
 <p>
   <a href="https://github.com/RANJITHROSAN17/pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/pinch/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="Node 20+" src="https://img.shields.io/badge/node-%E2%89%A520.6-3c873a" />
-  <img alt="tests 13" src="https://img.shields.io/badge/tests-13%20passing-4dd6c1" />
+  <img alt="tests 35" src="https://img.shields.io/badge/tests-35%20passing-4dd6c1" />
+  <img alt="tools 21" src="https://img.shields.io/badge/tools-21-ff8f6b" />
   <img alt="dependencies 0" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/licence-MIT-ffc061" /></a>
 </p>
@@ -16,6 +17,8 @@ from Telegram, Discord, Slack, WhatsApp, or your phone's browser, with your voic
 
 Private by default. No account, no cloud, no telemetry. Fast because the model is local.
 Yours because the data is a folder you can `rm -rf` whenever you like.
+
+![Pinch demo — boot, a real tool call, streaming reply, an in-chat approval, a reminder firing on your phone, and the honesty check catching a lie](assets/demo.gif)
 
 ```
    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -44,7 +47,20 @@ prompt that appears in whichever app you are messaging from.
 cd pinch
 npm run setup        # guided: brain → channels → voice → lock it down
 npm start            # panel on http://localhost:7777
+pinch pair           # QR for your phone
 ```
+
+Other commands worth knowing:
+
+| Command | Does |
+|---|---|
+| `pinch doctor` | re-verify every token and connection |
+| `pinch brain-test` | model speed + whether it can call tools |
+| `pinch pair` | phone URL + locally-generated QR |
+| `pinch chat` / `pinch ask "…"` | terminal use, same brain and memory |
+| `pinch supervise` | restart-on-crash wrapper, any OS |
+| `pinch service --install` | systemd/launchd/Task Scheduler entry |
+| `npm run demo` | run everything with a mock brain, no model needed |
 
 That's it. `npm run setup` walks you through it, verifies each token against the real
 service before saving, and prints the exact URL to open on your phone.
@@ -81,6 +97,10 @@ eight rounds per turn — then answers you in plain language.
 | `scan_project` | summarise an unfamiliar repo: tree, stack, README headline | — |
 | `search_web` | current facts, docs, error messages | — |
 | `calculator` | exact arithmetic, no floating-point guessing | — |
+| `remind` / `list_reminders` / `cancel_reminder` | "remind me in 20 minutes", delivered back to the chat that asked | — |
+| `open_url` | open a page in your browser ("open YouTube") | — |
+| `screenshot` | capture the screen to a file | ✅ |
+| `system_control` | lock or sleep the machine (no shutdown, by design) | ✅ |
 | `remember` / `recall` / `forget` | durable facts about you, across restarts | — |
 | `add_task` / `list_tasks` / `complete_task` | lightweight task list | — |
 | `time_now` | timezone-correct dates | — |
@@ -89,12 +109,40 @@ Typical things people actually use it for:
 
 - *"scan ~/code and tell me which repo is uncommitted"*
 - *"this test fails with a weird error — read it and fix it"*
+- *"remind me in 40 minutes to check the deploy"* — it messages you back, in the same app
 - *"remember that I deploy on Fridays only"* → it still knows next week
-- *"what's the current price of the thing I asked about yesterday?"*
-- *"add 'renew passport' to my tasks"* — from a bus, on Telegram
+- *"what is on my screen right now?"* → screenshot, then it reads it
 - *"explain this stack trace"* — dictated into the phone mic
+- *"hey pinch, open my repo"* — hands-free, while the panel is open
 
 ---
+
+## New in this upgrade
+
+Built after auditing a well-made local assistant setup guide (Keena) and taking the ideas that
+actually make a difference here — while deliberately skipping the ones that depend on Windows,
+a discrete GPU, or power tools people do not have.
+
+| Upgrade | Why it matters |
+|---|---|
+| **Reminders that fire** | `remind` parses "in 20 minutes", "at 6pm", "tomorrow at 9am" and delivers **back to the chat that asked** — Telegram stays on Telegram. Late deliveries say they were late instead of pretending. |
+| **Real streaming** | Tokens appear as the model writes them, in the panel and in the terminal. First-token latency is what "feels fast"; total latency rarely is. |
+| **Honesty guard** | A code-level audit of every reply: did it claim an action no tool performed? invent an email nobody gave it? cite a URL nothing fetched? invoke "your memory" with an empty memory? Mismatches are shown to you, not silently rewritten. |
+| **`Hey Pinch` wake word** | Opt-in, panel-only, off by default. The browser's own recogniser matches locally; audio never leaves the device until a command actually follows. |
+| **Tamil / Hindi dictation** | The mic language is a dropdown (EN·IN, EN·US, தமிழ், हिन्दी). The guide was right that this is the single biggest usability win for a lot of people. |
+| **PC actions** | `screenshot` (macOS/Linux/Windows), `open_url`, `system_control` (lock/sleep — shutdown deliberately absent). All destructive ones behind the approval gate. |
+| **A profile file** | Write plain facts about yourself once in `data/profile.md`; Pinch reads them every turn and is forbidden from inventing beyond them. |
+| **`pinch pair`** | Prints the phone URL and a locally-generated QR — never through a third-party QR service, which would be a funny way to leak the key that guards your machine. |
+| **`pinch brain-test`** | Measures first-token speed and — the question that actually matters — whether your model can call tools at all. A model that chats well but never calls a tool makes Pinch an expensive diary. |
+| **`pinch service` / `pinch supervise`** | Always-on: systemd unit (installed only when you ask), launchd plist, Windows Task Scheduler line, plus an any-OS restart-on-crash wrapper. |
+
+### What the guide got right that Pinch now copies outright
+
+- **Say plainly what leaves the machine.** See the table below.
+- **A model can be wrong about itself.** Check its claims in code, not in the prompt.
+- **Never invent a time.** If the phrase is not understood, ask — do not guess 9am.
+- **Give people the exact URL and a QR**, and let them tap once before the mic works.
+- **Say what the hardware needs, honestly.** Local models are the point, so be blunt about VRAM.
 
 ## Talking to it from anywhere
 
@@ -212,6 +260,22 @@ scripts/setup.js     the guided wizard and the doctor
 
 ---
 
+## What stays on your machine, and what uses the internet
+
+Being honest about this matters, so here it is plainly.
+
+| Runs on your machine (private) | Uses the internet |
+|---|---|
+| The model and all reasoning (`LLM_PROVIDER=ollama`) | Your voice replies, if you enable 🔈 — the browser's speech synthesis may use an OS/cloud voice |
+| Web panel, chat bridges, reminders, scheduler | `search_web` (DuckDuckGo) — the only tool that needs a network to work |
+| Conversation history, memory, profile, tasks (`data/`) | Telegram / Discord / Slack / WhatsApp — obviously; that is how they work |
+| Dictation (browser speech engine, on-device on iOS/Android) | `pip/npm/git` commands you ask it to run |
+| File access, shell, screenshots, approvals | Anything you set `LLM_PROVIDER=openai` to point at |
+
+If you use Telegram, your messages pass through Telegram's servers — Pinch's *processing* is
+local, the *transport* is not. That is the same honest trade the guide makes, and the web panel
+exists for when it matters.
+
 ## Security model — what it protects and what it doesn't
 
 Pinch runs shell commands. That is the point, and that is the risk. The design assumes
@@ -248,6 +312,52 @@ Pinch runs shell commands. That is the point, and that is the risk. The design a
 and bind to `127.0.0.1` if you only use it from that machine.
 
 ---
+
+## What hardware this needs
+
+Pinch is CPU-friendly in a way GPU-first assistants are not: a 7B model at Q4 runs on an
+ordinary laptop, and the panel + channels cost almost nothing. But the honest numbers matter —
+borrowed straight from the kind of setup guide that tells you the truth.
+
+| Part | Minimum | Comfortable |
+|---|---|---|
+| OS | macOS, Linux, Windows — any | any |
+| Model | `qwen2.5-coder:3b` on CPU (slow but usable) | `qwen2.5-coder:7b` (≈5 GB) |
+| GPU | not required | NVIDIA 8 GB+, Apple Silicon 16 GB unified, AMD 8 GB+ |
+| RAM | 8 GB | 16 GB (32 GB for 14B+) |
+| Storage | 5 GB for a 7B model | 20 GB |
+| Internet | needed for chat apps and web search | broadband |
+| Browser | any modern one; Chrome/Edge for the mic | Safari on iOS, Chrome on Android |
+
+**Check before you trust it:**
+
+```bash
+pinch brain-test     # speed + tool-calling support
+ollama ps            # should say 100% GPU if you have one
+```
+
+If `ollama ps` says CPU while you own a GPU, the model does not fit in VRAM. Drop to a smaller
+quant (`qwen2.5-coder:7b-instruct-q4_K_M`) or a smaller model. On Apple Silicon there is no
+`ollama ps` GPU line to worry about — Metal handles it transparently.
+
+**Models that call tools reliably:** `qwen2.5-coder:7b`, `qwen3:8b`, `llama3.1:8b`,
+`mistral-nemo:12b`. Avoid base/chat-only models for agent work — `pinch brain-test` will tell
+you in ten seconds.
+
+## Updating and uninstalling
+
+```bash
+# update
+cd pinch && git pull && npm install     # optional deps only
+# your .env and data/ are untouched by a pull
+
+# uninstall
+rm -rf pinch                            # this deletes conversations, memory, reminders
+ollama rm qwen2.5-coder:7b              # optionally drop the model
+```
+
+Nothing is written outside the folder except the systemd/launchd/Task Scheduler entry, if you
+ran `pinch service --install`. Remove that with the command it prints.
 
 ## Configuration
 
@@ -313,6 +423,13 @@ there if your service speaks WebSocket.
 | `401 bad or missing PINCH_KEY` | key missing in URL/cookie | open the URL with `?key=…` once |
 | Everything hangs on a prompt | an approval is waiting | answer **yes**/**no**, or check `/api/approvals` |
 | Model is slow | model too big for the hardware | smaller quant, or `LLM_PROVIDER=openai` for heavy tasks |
+| `ollama ps` shows CPU, not GPU | model does not fit in VRAM | smaller quant/model; close games; update drivers |
+| Model chats but never runs tools | model lacks tool calling | `pinch brain-test`, then switch to qwen2.5-coder / qwen3 / llama3.1 |
+| Reminders never arrive | channel that created it is offline | it falls back to the web panel and logs the reason |
+| "It said it sent an email and didn't" | model over-claimed | that is exactly what the honesty guard flags — read the check line |
+| 🛡️ Code check keeps appearing | model is over-claiming regularly | use a more capable model; the guard is doing its job |
+| "Hey Pinch" does nothing | browser has no speech engine, or mic denied | Chrome/Edge/Safari, allow the mic, keep the tab open |
+| Panel mic transcribes the wrong language | dictation language | use the EN·IN / தமிழ் dropdown in the header |
 
 `npm run doctor` re-checks all of the above against the live services.
 
@@ -336,6 +453,36 @@ output, a `git`-aware review tool, scheduled jobs ("every morning, summarise my 
 second-model critic for risky diffs.
 
 ---
+
+## FAQ
+
+**Is it really free?** Yes. The code is MIT, Ollama and the models are free, and there is no
+service to subscribe to. You pay for your own electricity.
+
+**Does it need ChatGPT or an API key?** No. The default brain runs on your machine. Keys are
+only needed if you deliberately point it at a cloud endpoint.
+
+**Can I change its name or voice?** The name is in `src/prompt.js` (and the wake-word regex in
+`public/index.html`). The voice comes from your OS in the panel; on the phone it is the system
+voice, so change it in iOS/Android accessibility settings.
+
+**Can it speak other languages?** Comprehension, yes — Tamil and Hindi dictation are built in.
+Spoken replies follow the browser/OS voice, so it will speak whatever that voice supports. The
+guide correctly refused to have a small local model *generate* Tamil prose; Pinch does the same
+thing by not claiming what it cannot verify.
+
+**Will it run on my laptop?** See the hardware table. A 7B Q4 model on 16 GB RAM is the realistic
+sweet spot.
+
+**Why not a wake word all the time, even with the app closed?** Because always-on microphones are
+a privacy problem wearing a feature's clothes. Pinch's wake word exists only while a tab is open,
+and you opt in each session.
+
+**Is WhatsApp safe to enable?** Read `docs/CHANNELS.md`. Short version: it is unofficial, against
+WhatsApp's ToS, and can get a number banned. Telegram does the same job legitimately.
+
+**Does it remember things I did not ask it to?** No. `remember` is only called when you ask it to
+remember, or when you write it in `data/profile.md`. Everything is a plain JSON file you can read.
 
 ## Licence
 

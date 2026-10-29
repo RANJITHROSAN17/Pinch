@@ -69,6 +69,43 @@ jobs:
           grep -q "472" /tmp/sse.txt
           grep -q "event: final" /tmp/sse.txt
 
+      - name: Streaming deltas arrive before the final answer
+        run: |
+          curl -sN -X POST http://localhost:7777/api/chat \
+            -H 'content-type: application/json' \
+            -d '{"sessionId":"ci-stream","text":"hello"}' > /tmp/sse3.txt
+          grep -q '"type":"delta"' /tmp/sse3.txt
+          echo "deltas: $(grep -c '"type":"delta"' /tmp/sse3.txt)"
+
+      - name: Reminders round-trip through the API and the scheduler
+        run: |
+          curl -sN -X POST http://localhost:7777/api/chat \
+            -H 'content-type: application/json' \
+            -d '{"sessionId":"ci-rem","text":"remind me in 45 minutes to stretch"}' > /tmp/sse4.txt
+          curl -sf http://localhost:7777/api/reminders > /tmp/rem.json
+          cat /tmp/rem.json
+          grep -q '"text":"stretch"' /tmp/rem.json
+          # rewind it into the past and let the 15s tick fire it
+          node -e "
+            const fs = require('fs');
+            const p = 'data/reminders.json';
+            const list = JSON.parse(fs.readFileSync(p, 'utf8'));
+            list.forEach(r => r.at = new Date(Date.now() - 120000).toISOString());
+            fs.writeFileSync(p, JSON.stringify(list, null, 2));
+          "
+          sleep 20
+          grep -q '"fired": true' data/reminders.json
+          echo "reminder fired on schedule"
+
+      - name: Honesty guard flags a claim with no evidence
+        run: |
+          node --input-type=module -e "
+            import { auditReply } from './src/guard.js';
+            const r = auditReply({ reply: \"I've sent it to boss@corp.com\", trace: [], userText: 'email my boss' });
+            if (r.clean) { console.error('guard failed to flag an unsupported claim'); process.exit(1); }
+            console.log('flagged:', r.flags.map(f => f.code).join(', '));
+          "
+
       - name: A denied command must not run
         run: |
           curl -sN -X POST http://localhost:7777/api/chat \

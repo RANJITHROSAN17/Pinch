@@ -121,6 +121,46 @@ export function deleteSession(id) {
   if (existsSync(path)) unlinkSync(path);
 }
 
+/* ─────────────────────────── reminders/timers ──────────────────────────── */
+
+const REMINDERS_FILE = join(DATA, "reminders.json");
+
+export function loadReminders() {
+  return readJson(REMINDERS_FILE, []);
+}
+
+function writeReminders(list) {
+  atomicWrite(REMINDERS_FILE, JSON.stringify(list.slice(-500), null, 2));
+  return list;
+}
+
+export function addReminder(reminder) {
+  const list = loadReminders();
+  list.push(reminder);
+  writeReminders(list);
+  return reminder;
+}
+
+export function updateReminder(id, patch) {
+  const list = loadReminders();
+  const index = list.findIndex((r) => r.id === id);
+  if (index === -1) return null;
+  list[index] = { ...list[index], ...patch };
+  writeReminders(list);
+  return list[index];
+}
+
+export function removeReminder(id) {
+  const list = loadReminders();
+  const next = list.filter((r) => r.id !== id);
+  writeReminders(next);
+  return list.length - next.length;
+}
+
+export function pendingReminders() {
+  return loadReminders().filter((r) => !r.fired && !r.cancelled);
+}
+
 /* ─────────────────────────── tasks (agent queue) ───────────────────────── */
 
 const TASKS_FILE = join(DATA, "tasks.json");

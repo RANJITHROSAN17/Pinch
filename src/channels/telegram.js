@@ -5,6 +5,7 @@
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
 import { answerApproval } from "../agent.js";
+import { registerSender } from "../outbound.js";
 
 const API = (method) => `https://api.telegram.org/bot${config.telegram.token}/${method}`;
 
@@ -99,6 +100,7 @@ export function startTelegram(log = console) {
         channel: "telegram",
         text,
         sessionId: `telegram-${chatId}`,
+        target: String(chatId),
         send: (t) => send(chatId, t),
         onProgress: async () => {
           await call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
@@ -143,6 +145,7 @@ export function startTelegram(log = console) {
     try {
       const me = await call("getMe");
       await call("deleteWebhook", { drop_pending_updates: false }).catch(() => {});
+      registerSender("telegram", (target, text) => send(target, text));
       log.info?.(`telegram: connected as @${me.username}${approved.size ? ` (${approved.size} allowed id(s))` : ""}`);
       if (!approved.size) {
         log.warn?.(`telegram: TELEGRAM_ALLOWED_IDS is empty — the bot will reply with your id so you can lock it down.`);

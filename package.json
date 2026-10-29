@@ -16,7 +16,11 @@
     "setup": "node scripts/setup.js",
     "doctor": "node scripts/setup.js --check",
     "test": "node --test",
-    "demo": "node scripts/demo.js"
+    "demo": "node scripts/demo.js",
+    "pair": "node scripts/pair.js",
+    "brain": "node scripts/braincheck.js",
+    "service": "node scripts/service.js",
+    "supervise": "node scripts/supervise.js"
   },
   "optionalDependencies": {
     "@whiskeysockets/baileys": "^6.7.16",

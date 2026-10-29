@@ -7,6 +7,10 @@
  *   pinch doctor       check what is configured and what is broken
  *   pinch ask "..."    one-shot question in the terminal
  *   pinch chat         terminal chat session (no browser)
+ *   pinch pair         print the URL + QR for your phone
+ *   pinch brain-test   measure the model and check it can call tools
+ * *   pinch service      autostart snippet for systemd / launchd / Task Scheduler
+ *   pinch supervise    restart-on-crash wrapper (any OS)
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -31,6 +35,10 @@ ${c.coral("🦞 pinch")} — local, private, yours
   ${c.bold("pinch doctor")}          verify configuration and connectivity
   ${c.bold("pinch chat")}            chat in the terminal
   ${c.bold("pinch ask")} "question"  one-shot answer
+  ${c.bold("pinch pair")}            print a QR + URL to open Pinch on your phone
+  ${c.bold("pinch brain-test")}      measure model speed and tool-calling support
+  ${c.bold("pinch service")}         autostart config for systemd / launchd / Windows
+  ${c.bold("pinch supervise")}       restart Pinch automatically if it ever crashes
 
 Everything is configured in .env — no accounts, no cloud, no telemetry.
 `);
@@ -58,6 +66,20 @@ switch (command) {
     break;
   case "chat":
     run("src/cli.js", ["chat"]);
+    break;
+  case "pair":
+    run("scripts/pair.js");
+    break;
+  case "brain-test":
+  case "braintest":
+    run("scripts/braincheck.js");
+    break;
+  case "service":
+    run("scripts/service.js", rest);
+    break;
+  case "supervise":
+  case "daemon":
+    run("scripts/supervise.js");
     break;
   case "ask": {
     const text = rest.join(" ").trim();

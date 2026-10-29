@@ -149,6 +149,28 @@
   .memform input{flex:1;background:#200f12;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px;font-family:inherit;font-size:.82rem}
   .warnbox{background:#2a1710;border:1px solid #6b3a20;color:#ffcda6;border-radius:10px;padding:10px;font-size:.76rem;line-height:1.5}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .bubble.streaming::after{content:"▋";color:var(--coral);animation:blink 1s steps(2) infinite;margin-left:2px}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+  .guard{
+    margin:6px 0 0 40px;background:#2a1a10;border:1px solid #6b4a20;border-radius:11px;
+    padding:9px 12px;font-size:.76rem;color:#ffd9a8;max-width:640px;line-height:1.5
+  }
+  .guard b{color:var(--gold)}
+  .wake-pill{
+    position:fixed;left:50%;transform:translateX(-50%);bottom:92px;z-index:30;
+    background:#2b1518;border:1px solid var(--coral);color:var(--coral);border-radius:999px;
+    padding:7px 14px;font-size:.76rem;display:none;align-items:center;gap:8px;
+    box-shadow:0 10px 30px -12px var(--coral);
+  }
+  .wake-pill.on{display:flex}
+  .wake-pill i{width:7px;height:7px;border-radius:50%;background:var(--coral);animation:pulse 1.4s infinite}
+  .toast{
+    position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:60;
+    background:#12312c;border:1px solid var(--teal);color:#c9fff4;border-radius:12px;
+    padding:11px 15px;font-size:.85rem;max-width:min(560px,92vw);display:none;
+    box-shadow:0 16px 40px -18px #000;
+  }
+  .toast.on{display:block}
 </style>
 </head>
 <body>
@@ -175,6 +197,13 @@
         <div class="sub" id="brainLine">local · private · yours</div>
       </div>
       <div class="spacer"></div>
+      <select class="hbtn" id="micLang" title="Dictation language" style="width:auto;padding:0 8px;font-size:.75rem">
+        <option value="en-IN">EN·IN</option>
+        <option value="en-US">EN·US</option>
+        <option value="ta-IN">தமிழ்</option>
+        <option value="hi-IN">हिन्दी</option>
+      </select>
+      <button class="hbtn" id="wakeToggle" title="Listen for &quot;Hey Pinch&quot; while this page is open">👂</button>
       <button class="hbtn" id="speakToggle" title="Speak replies out loud">🔈</button>
       <button class="hbtn" id="memBtn" title="Memory & status">🧠</button>
     </header>
@@ -196,6 +225,9 @@
     </div>
   </main>
 </div>
+
+<div class="wake-pill" id="wakePill"><i></i><span>listening for “Hey Pinch”…</span></div>
+<div class="toast" id="toast"></div>
 
 <div class="drawer" id="drawer">
   <div class="scrim" id="scrim"></div>
@@ -278,13 +310,34 @@ function scrollDown() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let listening = false;
+let wakeMode = localStorage.getItem("pinch.wake") === "1";
+let wakeRecognition = null;
+
+const MIC_LANG_KEY = "pinch.miclang";
+const micLang = $("micLang");
+micLang.value = localStorage.getItem(MIC_LANG_KEY) || "en-IN";
+micLang.onchange = () => {
+  localStorage.setItem(MIC_LANG_KEY, micLang.value);
+  if (recognition) recognition.lang = micLang.value;
+  if (wakeRecognition) wakeRecognition.lang = micLang.value;
+  toast(`Dictation language: ${micLang.options[micLang.selectedIndex].text}`, 2200);
+};
+
+function toast(text, ms = 4000) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("on");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("on"), ms);
+}
 
 if (!SR) {
   $("voiceHint").textContent = "🎙️ this browser has no speech engine — try Safari on iPhone or Chrome on Android";
   $("mic").style.opacity = ".45";
+  $("wakeToggle").style.opacity = ".4";
 } else {
   recognition = new SR();
-  recognition.lang = navigator.language || "en-IN";
+  recognition.lang = micLang.value;
   recognition.interimResults = true;
   recognition.continuous = false;
 
@@ -293,9 +346,7 @@ if (!SR) {
     for (const res of event.results) text += res[0].transcript;
     $("input").value = text;
     autoGrow();
-    if (event.results[event.results.length - 1].isFinal) {
-      setTimeout(() => send(), 220);
-    }
+    if (event.results[event.results.length - 1].isFinal) setTimeout(() => send(), 220);
   };
   recognition.onend = () => { listening = false; $("mic").classList.remove("listening"); };
   recognition.onerror = (e) => {
@@ -312,14 +363,103 @@ $("mic").onclick = () => {
   try { recognition.start(); } catch {}
 };
 
-function speak(text) {
+/* ── "Hey Pinch" wake word: opt-in, page must stay open ───────────────────
+   Runs the browser's own recogniser in continuous mode and matches the
+   trigger phrase locally on this device. Nothing is sent anywhere until a
+   command actually follows the wake word. Deliberately not always-on audio:
+   it only exists while this tab is open and the toggle is on.            */
+const WAKE_RE = /^\s*(?:hey\s+|ok\s+|oi\s+)?pinch\b[\s,.]*/i;
+
+function ensureWake() {
+  if (!SR) return null;
+  if (wakeRecognition) return wakeRecognition;
+  const rec = new SR();
+  rec.lang = micLang.value;
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      const match = WAKE_RE.exec(transcript);
+      if (!match) continue;
+      const command = transcript.slice(match[0].length).trim();
+      if (command.length > 2) {
+        $("input").value = command;
+        autoGrow();
+        if (event.results[i].isFinal) { rec.stop(); setTimeout(send, 150); }
+      } else if (event.results[i].isFinal) {
+        toast("🦞 Listening — what do you need?", 2500);
+        $("mic").classList.add("listening");
+      }
+    }
+  };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed") { setWake(false); alert("Microphone permission is required for the wake word."); }
+    if (e.error === "no-speech" || e.error === "aborted") return;
+  };
+  rec.onend = () => {
+    if (wakeMode) { try { rec.start(); } catch {} }   // Chrome stops after silence
+  };
+  wakeRecognition = rec;
+  return rec;
+}
+
+function setWake(on) {
+  wakeMode = on;
+  localStorage.setItem("pinch.wake", on ? "1" : "0");
+  $("wakeToggle").classList.toggle("on", on);
+  $("wakePill").classList.toggle("on", on);
+  if (!SR) { if (on) alert("This browser has no speech engine."); return; }
+  const rec = ensureWake();
+  if (!rec) return;
+  try {
+    if (on) rec.start();
+    else rec.stop();
+  } catch {}
+}
+
+$("wakeToggle").onclick = () => {
+  const next = !wakeMode;
+  if (next && !confirm("Listen for \"Hey Pinch\" while this page is open?\n\nThe microphone stays active in this tab only, and the browser's own recogniser does the matching on your device. Deny if you are on a shared machine.")) return;
+  setWake(next);
+};
+if (wakeMode) setWake(true);
+
+/* ── speech out: queue sentences so talking starts immediately ───────────── */
+const speech = { queue: [], speaking: false };
+
+function speakable(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, " code block ")
+    .replace(/[*_`#>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function enqueueSpeech(text) {
   if (!store.speak || !window.speechSynthesis) return;
-  const clean = text.replace(/```[\s\S]*?```/g, " code block ").replace(/[*_`#>]/g, "").slice(0, 900);
-  const utter = new SpeechSynthesisUtterance(clean);
-  utter.lang = navigator.language || "en-IN";
+  const clean = speakable(text);
+  if (!clean) return;
+  speech.queue.push(clean.slice(0, 600));
+  if (!speech.speaking) drainSpeech();
+}
+
+function drainSpeech() {
+  const next = speech.queue.shift();
+  if (!next) { speech.speaking = false; return; }
+  speech.speaking = true;
+  const utter = new SpeechSynthesisUtterance(next);
+  utter.lang = micLang.value || navigator.language || "en-IN";
   utter.rate = 1.03;
-  speechSynthesis.cancel();
+  utter.onend = drainSpeech;
+  utter.onerror = drainSpeech;
   speechSynthesis.speak(utter);
+}
+
+function stopSpeech() {
+  speech.queue = [];
+  speech.speaking = false;
+  if (window.speechSynthesis) speechSynthesis.cancel();
 }
 
 $("speakToggle").onclick = () => {
@@ -327,9 +467,22 @@ $("speakToggle").onclick = () => {
   localStorage.setItem("pinch.speak", store.speak ? "1" : "0");
   $("speakToggle").classList.toggle("on", store.speak);
   $("speakToggle").textContent = store.speak ? "🔊" : "🔈";
+  if (!store.speak) stopSpeech();
 };
 $("speakToggle").classList.toggle("on", store.speak);
 $("speakToggle").textContent = store.speak ? "🔊" : "🔈";
+
+/* ── live reminders from the server ─────────────────────────────────────── */
+function connectEvents() {
+  const src = new EventSource(`/api/events${store.key ? `?key=${encodeURIComponent(store.key)}` : ""}`);
+  src.addEventListener("reminder", (event) => {
+    const data = JSON.parse(event.data);
+    toast(data.text, 9000);
+    addMsg("assistant", data.text);
+    enqueueSpeech(String(data.text).replace(/⏰ \*\*Reminder:\*\*/i, "Reminder:"));
+  });
+  src.onerror = () => { src.close(); setTimeout(connectEvents, 5000); };
+}
 
 /* ─────────────────────────────── sending ───────────────────────────────── */
 let busy = false;
@@ -343,12 +496,41 @@ async function send() {
   addMsg("user", text);
   busy = true;
   $("send").textContent = "■";
+  stopSpeech();
 
   const steps = addSteps();
   const thinking = document.createElement("div");
   thinking.className = "step";
   thinking.innerHTML = `<span>🦞</span><b>thinking</b><span class="typing"><i></i><i></i><i></i></span>`;
   steps.appendChild(thinking);
+
+  // Live bubble: text appears as the model generates it.
+  let live = null;
+  let liveText = "";
+  let liveRenderAt = 0;
+
+  function pushDelta(chunk) {
+    liveText += chunk;
+    if (!live) {
+      thinking.remove();
+      live = addMsg("assistant", "");
+      live.querySelector(".bubble").classList.add("streaming");
+    }
+    const now = performance.now();
+    if (now - liveRenderAt < 60) return; // don't re-render markdown on every token
+    liveRenderAt = now;
+    live.querySelector(".bubble").innerHTML = md(liveText);
+    scrollDown();
+  }
+
+  function finishLive(finalText) {
+    if (live) {
+      const bubble = live.querySelector(".bubble");
+      bubble.classList.remove("streaming");
+      bubble.innerHTML = md(finalText);
+    }
+    scrollDown();
+  }
 
   try {
     const res = await fetch("/api/chat", {
@@ -362,6 +544,7 @@ async function send() {
     const decoder = new TextDecoder();
     let buffer = "";
     let answer = "";
+    const guardFlags = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -379,13 +562,16 @@ async function send() {
         try { data = JSON.parse(dataMatch[1]); } catch { continue; }
 
         if (event === "step") {
-          if (data.type === "status") {
+          if (data.type === "delta") {
+            pushDelta(data.text);
+          } else if (data.type === "status") {
             thinking.querySelector("b").textContent = data.message;
           } else if (data.type === "tool") {
             const row = document.createElement("div");
             row.className = "step";
             row.innerHTML = `<span>🔧</span><b>${data.name}</b><span>${String(data.label || "").replace(/</g,"&lt;")}</span>`;
             steps.insertBefore(row, thinking);
+            scrollDown();
           } else if (data.type === "tool_done") {
             const row = document.createElement("div");
             row.className = "step";
@@ -398,9 +584,12 @@ async function send() {
             addApproval(data.id, data.description, async (allowed) => {
               await fetch("/api/approve", { method: "POST", headers: headers(), body: JSON.stringify({ id: data.id, allowed }) });
             });
+          } else if (data.type === "guard") {
+            guardFlags.push(...(data.flags || []));
           }
         } else if (event === "final") {
           answer = data.text;
+          if (data.guard) guardFlags.push(...data.guard);
         } else if (event === "error") {
           answer = `⚠️ ${data.message}`;
         }
@@ -408,8 +597,19 @@ async function send() {
     }
 
     thinking.remove();
-    if (answer) { addMsg("assistant", answer); speak(answer); }
-    else addMsg("assistant", "🦞 …I lost the thread there. Try again?");
+    if (answer) finishLive(answer);
+    else if (!live) addMsg("assistant", "🦞 …I lost the thread there. Try again?");
+
+    if (guardFlags.length && live) {
+      const note = document.createElement("div");
+      note.className = "guard";
+      note.innerHTML =
+        `<b>🛡️ Code check</b> — this reply did not match what actually ran:<br>` +
+        guardFlags.map((f) => `• ${String(f.message).replace(/</g, "&lt;")}`).join("<br>");
+      live.after(note);
+    }
+
+    if (answer) enqueueSpeech(stripGuardNote(answer));
   } catch (err) {
     thinking.remove();
     addMsg("assistant", `⚠️ Could not reach Pinch's server: ${err.message}`);
@@ -418,6 +618,12 @@ async function send() {
     $("send").textContent = "➤";
     loadSessions();
   }
+}
+
+/** The guard footer is for the eyes; do not read it aloud. */
+function stripGuardNote(text) {
+  const cut = text.indexOf("🛡️ **Code check:**");
+  return cut === -1 ? text : text.slice(0, cut);
 }
 
 $("send").onclick = send;
@@ -545,6 +751,7 @@ if (window.innerWidth <= 820) $("burger").style.display = "grid";
   await health();
   await loadSessions();
   await openSession(store.sessionId);
+  connectEvents();
   if (!$("thread").children.length) {
     addMsg("assistant",
       "🦞 **Pinch here.**\n\nI run on this machine, not in someone's cloud. I can read and write code, run commands (with your permission), search the web, and remember what matters to you.\n\nTry: *\"scan my projects folder and tell me what to work on\"* — or just tap the mic and talk.");

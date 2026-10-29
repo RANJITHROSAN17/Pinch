@@ -45,7 +45,7 @@ function approvalPrompt(description) {
  *        channels with real buttons (Telegram) render their own prompt;
  *        everyone else gets the plain "reply yes/no" text.
  */
-export async function routeMessage({ channel, text, send, sessionId, onProgress, onApproval }) {
+export async function routeMessage({ channel, text, send, sessionId, target = "", onProgress, onApproval }) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return { handled: false };
 
@@ -100,6 +100,7 @@ export async function routeMessage({ channel, text, send, sessionId, onProgress,
     sessionId: sessionId || `${channel}-main`,
     text: trimmed,
     channel,
+    target: target || sessionId || `${channel}-main`,
     onEvent: async (event) => {
       if (event.type !== "approval") return;
       if (onApproval) await onApproval({ id: event.id, description: event.description });

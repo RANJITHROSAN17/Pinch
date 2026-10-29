@@ -43,6 +43,55 @@ async function postJson(url, body, headers = {}, timeoutMs = TIMEOUT_MS) {
   }
 }
 
+/* ─────────────────────────────── streaming ─────────────────────────────── */
+
+/**
+ * Read an NDJSON or SSE body line-by-line and hand each parsed object over.
+ * Both providers stream, but in different envelopes; the callers differ only
+ * in how they unwrap them.
+ */
+async function streamLines(res, onObject, isSse) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n");
+    buffer = parts.pop() || "";
+    for (const line of parts) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const payload = isSse ? (trimmed.startsWith("data:") ? trimmed.slice(5).trim() : null) : trimmed;
+      if (!payload) continue;
+      if (payload === "[DONE]") return;
+      try {
+        onObject(JSON.parse(payload));
+      } catch {
+        /* keep-alive or partial frame — ignore */
+      }
+    }
+  }
+}
+
+async function postStream(url, body, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  });
+  if (!res.ok) {
+    clearTimeout(timer);
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+  }
+  return { res, done: () => clearTimeout(timer) };
+}
+
 /* ──────────────────────────────── ollama ───────────────────────────────── */
 
 /** Provider-neutral history → Ollama's wire format. */
@@ -63,29 +112,62 @@ function toOllamaMessages(messages) {
 const ollama = {
   name: "ollama",
 
-  async chat(messages, { tools = [], model } = {}) {
+  async chat(messages, { tools = [], model, onDelta } = {}) {
     const body = {
       model: model || config.llm.ollamaModel,
       messages: toOllamaMessages(messages),
-      stream: false,
+      stream: Boolean(onDelta),
       options: { temperature: 0.4, num_ctx: 8192 },
     };
     if (tools.length) body.tools = tools;
-    const out = await postJson(`${config.llm.ollamaUrl}/api/chat`, body);
-    const message = out.message || {};
-    return {
-      content: message.content || "",
-      toolCalls: (message.tool_calls || []).map((call, i) => ({
-        id: `call_${Date.now()}_${i}`,
-        name: call.function?.name,
-        arguments:
-          typeof call.function?.arguments === "string"
-            ? safeParse(call.function.arguments)
-            : call.function?.arguments || {},
-      })),
-      provider: "ollama",
-      raw: out,
-    };
+
+    const url = `${config.llm.ollamaUrl}/api/chat`;
+
+    // Non-streaming path: one request, one answer.
+    if (!onDelta) {
+      const out = await postJson(url, body);
+      const message = out.message || {};
+      return {
+        content: message.content || "",
+        toolCalls: (message.tool_calls || []).map((call, i) => ({
+          id: `call_${Date.now()}_${i}`,
+          name: call.function?.name,
+          arguments:
+            typeof call.function?.arguments === "string"
+              ? safeParse(call.function.arguments)
+              : call.function?.arguments || {},
+        })),
+        provider: "ollama",
+        raw: out,
+      };
+    }
+
+    // Streaming path: emit text as it arrives, collect tool calls at the end.
+    const { res, done } = await postStream(url, body);
+    let content = "";
+    const calls = [];
+    try {
+      await streamLines(res, (chunk) => {
+        const piece = chunk.message?.content;
+        if (piece) {
+          content += piece;
+          onDelta(piece);
+        }
+        for (const call of chunk.message?.tool_calls || []) {
+          calls.push({
+            id: `call_${Date.now()}_${calls.length}`,
+            name: call.function?.name,
+            arguments:
+              typeof call.function?.arguments === "string"
+                ? safeParse(call.function.arguments)
+                : call.function?.arguments || {},
+          });
+        }
+      }, false);
+    } finally {
+      done();
+    }
+    return { content, toolCalls: calls, provider: "ollama" };
   },
 
   async probe() {
@@ -124,7 +206,7 @@ function toOpenAiMessages(messages) {
 const openai = {
   name: "openai",
 
-  async chat(messages, { tools = [], model } = {}) {
+  async chat(messages, { tools = [], model, onDelta } = {}) {
     if (!config.llm.openaiKey) throw new Error("OPENAI_API_KEY is not set");
     const body = {
       model: model || config.llm.openaiModel,
@@ -135,22 +217,62 @@ const openai = {
       body.tools = tools.map((t) => ({ type: "function", function: t.function }));
       body.tool_choice = "auto";
     }
-    const out = await postJson(
-      `${config.llm.openaiBaseUrl}/chat/completions`,
-      body,
-      { authorization: `Bearer ${config.llm.openaiKey}` }
-    );
-    const message = out.choices?.[0]?.message || {};
-    return {
-      content: message.content || "",
-      toolCalls: (message.tool_calls || []).map((call) => ({
-        id: call.id || `call_${Date.now()}`,
-        name: call.function?.name,
-        arguments: safeParse(call.function?.arguments),
-      })),
-      provider: "openai",
-      raw: out,
-    };
+    const url = `${config.llm.openaiBaseUrl}/chat/completions`;
+    const headers = { authorization: `Bearer ${config.llm.openaiKey}` };
+
+    if (!onDelta) {
+      const out = await postJson(url, body, headers);
+      const message = out.choices?.[0]?.message || {};
+      return {
+        content: message.content || "",
+        toolCalls: (message.tool_calls || []).map((call) => ({
+          id: call.id || `call_${Date.now()}`,
+          name: call.function?.name,
+          arguments: safeParse(call.function?.arguments),
+        })),
+        provider: "openai",
+        raw: out,
+      };
+    }
+
+    // Streaming: content deltas arrive as strings; tool calls arrive as
+    // fragments that must be stitched by index (the arguments string is cut
+    // mid-JSON across chunks, so it can only be parsed at the end).
+    const { res, done } = await postStream(url, { ...body, stream: true }, headers);
+    let content = "";
+    const partial = new Map();
+    try {
+      await streamLines(res, (chunk) => {
+        const choice = chunk.choices?.[0];
+        if (!choice) return;
+        const delta = choice.delta || {};
+        if (delta.content) {
+          content += delta.content;
+          onDelta(delta.content);
+        }
+        for (const tc of delta.tool_calls || []) {
+          const index = tc.index ?? partial.size;
+          const entry = partial.get(index) || { id: "", name: "", args: "" };
+          if (tc.id) entry.id = tc.id;
+          if (tc.function?.name) entry.name = tc.function.name;
+          if (tc.function?.arguments) entry.args += tc.function.arguments;
+          partial.set(index, entry);
+        }
+      }, true);
+    } finally {
+      done();
+    }
+
+    const toolCalls = [...partial.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([i, entry]) => ({
+        id: entry.id || `call_${Date.now()}_${i}`,
+        name: entry.name,
+        arguments: safeParse(entry.args),
+      }))
+      .filter((call) => call.name);
+
+    return { content, toolCalls, provider: "openai" };
   },
 
   async probe() {
@@ -164,7 +286,7 @@ const openai = {
 const mock = {
   name: "mock",
 
-  async chat(messages) {
+  async chat(messages, { onDelta } = {}) {
     // If a tool already ran this turn, summarise its output instead of
     // calling it again — that is what makes the mock brain terminate and
     // lets the full agent loop be demonstrated without a model.
@@ -183,6 +305,20 @@ const mock = {
 
     const last = [...messages].reverse().find((m) => m.role === "user");
     const text = String(last?.content || "");
+    // "remind me in 20 minutes to stretch" → remind {when:"in 20 minutes", text:"stretch"}
+    const remindMatch = /^remind me (.*?) to (.+)$/i.exec(text);
+    if (remindMatch) {
+      return {
+        content: "",
+        toolCalls: [{
+          id: `mock_${Date.now()}`,
+          name: "remind",
+          arguments: { when: remindMatch[1].trim(), text: remindMatch[2].trim() },
+        }],
+        provider: "mock",
+      };
+    }
+
     const toolHints = [
       [/^(run|exec|shell)\s+/i, "shell"],
       [/^(read|cat|open)\s+/i, "read_file"],
@@ -210,14 +346,15 @@ const mock = {
         };
       }
     }
-    return {
-      content:
-        `🦞 (mock brain) I heard: "${text.slice(0, 200)}".\n\n` +
-        `No real model is configured yet, so this is a canned reply used to prove the plumbing works.\n` +
-        `Point LLM_PROVIDER at Ollama or an OpenAI-compatible endpoint and I'll actually think.`,
-      toolCalls: [],
-      provider: "mock",
-    };
+    const canned =
+      `🦞 (mock brain) I heard: "${text.slice(0, 200)}".\n\n` +
+      `No real model is configured yet, so this is a canned reply used to prove the plumbing works.\n` +
+      `Point LLM_PROVIDER at Ollama or an OpenAI-compatible endpoint and I'll actually think.`;
+    if (onDelta) {
+      // Emit word by word so the streaming UI can be tested without a model.
+      for (const word of canned.split(/(\s+)/)) onDelta(word);
+    }
+    return { content: canned, toolCalls: [], provider: "mock" };
   },
 
   async probe() {

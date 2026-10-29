@@ -8,6 +8,7 @@
 import { WebSocketClient } from "./ws.js";
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
+import { registerSender } from "../outbound.js";
 
 const API = "https://discord.com/api/v10";
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15); // GUILDS, GUILD_MESSAGES, DM, MESSAGE_CONTENT
@@ -78,6 +79,7 @@ export function startDiscord(log = console) {
         channel: "discord",
         text,
         sessionId: `discord-${message.channel_id}`,
+        target: message.channel_id,
         send: (t) => send(message.channel_id, t),
       });
     } catch (err) {
@@ -156,6 +158,7 @@ export function startDiscord(log = console) {
     });
   }
 
+  registerSender("discord", (target, text) => send(target, text));
   connect();
 
   return {

@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Pinch is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste secrets** — no bot tokens, no `PINCH_KEY`, no `.env`
+        contents. Redact anything that looks like a key before submitting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+      placeholder: I asked Pinch to run the tests and it replied "…" instead of running them.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. npm start
+        2. In Telegram, send "run npm test"
+        3. Tap Allow
+        4. Nothing happens, no error in the terminal
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Which channel?
+      options: [Web panel, Telegram, Discord, Slack, WhatsApp, Terminal (pinch chat), Not channel-specific]
+    validations:
+      required: true
+  - type: input
+    id: brain
+    attributes:
+      label: Brain
+      description: Output of `pinch brain-test` (first line is enough), or LLM_PROVIDER/model
+      placeholder: ollama · qwen2.5-coder:7b · first token 480 ms
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`pinch doctor` output"
+      description: Paste it with any tokens redacted.
+      render: shell
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Node version
+      placeholder: Windows 11 · Node 22.11 / Ubuntu 24.04 · Node 20.18
+    validations:
+      required: true
