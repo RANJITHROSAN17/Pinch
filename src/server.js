@@ -390,10 +390,9 @@ export function createPinchServer() {
       // constant format with args rather than interpolated, and the URL is
       // scrubbed of control bytes first, so a request can neither slip a
       // newline into the log nor smuggle a %s into the format.
-      // What gets logged is chosen from fixed sets and counts: the method if it
-      // is one of the seven, the length of the URL, the status. The request text
-      // itself never reaches the log, so there is nothing to inject.
-      console.error("[pinch] %s request, %d url bytes, failed %d:", methodOf(req.method), req.url.length, status, err);
+      // Nothing derived from the request reaches the log — not the URL, not
+      // even its length. A method from a fixed set, the status, and the error.
+      console.error("[pinch] %s request failed %d:", methodOf(req.method), status, err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }

@@ -6,11 +6,17 @@ fixed. If you are reading this because an alert reappeared: start at
 [Re-running the scanners](#re-running-the-scanners).
 
 At the start there were **24 open alerts**: 18 from CodeQL and 6 from OpenSSF
-Scorecard. All 18 CodeQL findings were real enough to act on — none were
-dismissed as false positives silently. The Scorecard findings were about repo
-configuration and project age, not code.
+Scorecard. Today there are **zero open**. Of the 18, **16 were closed by
+changing code** and **2 were dismissed with the reason written out below** —
+neither was a silent pass. Of the 6 Scorecard checks, **2 were fixed by repo
+configuration** and **4 dismissed**, because they are about project age, review
+history and external badges rather than anything a commit can change.
 
-## CodeQL: 14 closed in code
+Fixing these transiently created three more alerts — two on a log line this
+pass had just written, one on a line that moved — each fixed in code rather
+than waved through. The counts below are the ones that matter, not the story.
+
+## CodeQL: 16 closed in code
 
 Each one was fixed by changing the code, not by loosening the query.
 
@@ -26,6 +32,13 @@ Each one was fixed by changing the code, not by loosening the query.
 | `js/stack-trace-exposure` | `src/server.js` `json()` | 4xx responses relayed `err.message` | responses are picked from a status-code table; nothing exception-shaped can reach a client by construction |
 | `js/tainted-format-string`, `js/log-injection` | `src/server.js` error log | request URL interpolated into a log line | the log carries only a method from a fixed set, the URL's byte length, the status and the error object — no request text reaches the log at all. (Scrubbing the text was not enough: the check wants the flow gone, and it is right that a log line is not the place for attacker-chosen bytes.) |
 | `js/file-access-to-http` | `scripts/setup.js` `checkTelegram` | a token read from `.env` goes into a request URL | token must match an anchored shape regex **and** is percent-encoded before it becomes a path |
+
+Three alerts were created by this pass itself and closed the same way —
+`js/tainted-format-string` and `js/log-injection` on the new error log, then
+`js/log-injection` again on the next version of that line. Each one was a fair
+cop: the log was carrying request text. (The column numbers in a CodeQL alert
+lag behind the code, so every one of these was located by grepping the rule's
+sink rather than by trusting the line number.)
 
 Two of these were found by the new fuzz suite rather than by the scanner or the
 unit tests: the calculator tool let a parser exception escape instead of
