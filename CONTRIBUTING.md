@@ -21,7 +21,7 @@ welcome, especially the kind that make it **safer** or **work in more places**.
 ## Getting set up
 
 ```bash
-git clone https://github.com/RANJITHROSAN17/pinch && cd pinch
+git clone https://github.com/RANJITHROSAN17/Pinch && cd pinch
 npm test          # 93 tests, no model needed
 npm run audit     # the adversarial self-check — does the product still refuse attacks?
 npm run demo      # mock brain — the whole app, no Ollama required

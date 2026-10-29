@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/RANJITHROSAN17/pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/pinch/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="tests" src="https://img.shields.io/badge/tests-91%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-21-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
