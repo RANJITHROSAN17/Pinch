@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-91%20passing-4dd6c1" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-93%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-21-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A522%20LTS-3c873a" />
@@ -312,7 +312,7 @@ came out of it — including reading `/etc/passwd` through a workspace symlink, 
 able to POST to the assistant and read the reply.
 
 **All six are fixed, each with a regression test that fails on the old code** (27 new tests fail
-against the pre-audit commit; 91 pass after).
+against the pre-audit commit; 93 pass after).
 
 | Finding | Severity |
 |---|---|
@@ -530,7 +530,7 @@ why at the bottom.
 Issues and PRs welcome. The bar is simple:
 
 ```bash
-node --test     # 91 tests, must stay green
+node --test     # 93 tests, must stay green
 ```
 
 - New tool? Add a test, and mark it `dangerous: true` if it changes anything.
