@@ -11,6 +11,8 @@
  *   pinch brain-test   measure the model and check it can call tools
  * *   pinch service      autostart snippet for systemd / launchd / Task Scheduler
  *   pinch supervise    restart-on-crash wrapper (any OS)
+ *   pinch audit        run the adversarial self-check against this install
+ *   pinch radar        what has drifted: runtime, CI, pinned actions
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -39,6 +41,8 @@ ${c.coral("🦞 pinch")} — local, private, yours
   ${c.bold("pinch brain-test")}      measure model speed and tool-calling support
   ${c.bold("pinch service")}         autostart config for systemd / launchd / Windows
   ${c.bold("pinch supervise")}       restart Pinch automatically if it ever crashes
+  ${c.bold("pinch audit")}           run the adversarial self-check against this install
+  ${c.bold("pinch radar")}           what has drifted: runtime, CI, pinned actions
 
 Everything is configured in .env — no accounts, no cloud, no telemetry.
 `);
@@ -56,6 +60,12 @@ switch (command) {
   case "start":
   case "serve":
     run("src/index.js");
+    break;
+  case "audit":
+    run("scripts/audit.js", rest);
+    break;
+  case "radar":
+    run("scripts/tech-radar.js", rest);
     break;
   case "setup":
     run("scripts/setup.js");

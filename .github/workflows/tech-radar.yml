@@ -1,0 +1,63 @@
+name: Tech radar
+
+# Weekly: "has the ground moved under this repo?"
+#
+# This job deliberately does not write code and does not call a model. It
+# fetches primary sources (endoflife.date, the GitHub API) and diffs them
+# against package.json and the workflows, then files the result as an issue.
+#
+# The failure mode we are avoiding: an LLM with no browsing told "keep us
+# current" will answer from its training data, confidently, and be a year out
+# of date. Facts come from endpoints. Judgement comes from a human.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  radar:
+    name: Sweep runtime, CI and pinned actions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+
+      - name: Build the report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/tech-radar.js --markdown > /tmp/radar.md && cat /tmp/radar.md
+
+      - name: File it as an issue (update the existing one)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BODY="$(cat /tmp/radar.md)"
+          NUM="$(gh issue list --state open --search 'Tech radar in:title' --json number --jq '.[0].number // empty')"
+          if [ -n "$NUM" ]; then
+            gh issue edit "$NUM" --body "$BODY"
+            gh issue comment "$NUM" --body "Refreshed $(date -u +%Y-%m-%d). Nothing is changed automatically — this is a list of decisions, not a changelog."
+            echo "updated issue #$NUM"
+          else
+            gh issue create \
+              --title "🦞 Tech radar (auto-updated weekly)" \
+              --body "$BODY"
+          fi
+
+      - name: Summarise in the run log
+        if: always()
+        run: |
+          {
+            echo "### 🦞 Tech radar"
+            echo
+            cat /tmp/radar.md || echo "the report was not produced this week"
+          } >> "$GITHUB_STEP_SUMMARY"

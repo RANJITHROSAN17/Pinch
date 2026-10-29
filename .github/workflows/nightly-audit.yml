@@ -1,0 +1,68 @@
+name: Nightly self-check
+
+# Runs the adversarial probes in scripts/audit.js every night against a fresh
+# checkout — no model, no browser, no network required.
+#
+# Why a schedule, and not just CI on push? Because guard rails rot silently.
+# A refactor six weeks from now can reopen a hole that no unit test notices,
+# and "we audited it in October" is not a security posture. This job asks the
+# same questions the audit asked, every night, and fails loudly if the answer
+# changes. It is the only workflow here that is allowed to be boring.
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily, 03:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Guard-rail probes (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Unit and agent tests
+        run: npm test
+
+      - name: Adversarial self-check
+        run: node scripts/audit.js
+
+      - name: Self-check, machine readable
+        if: always()
+        run: node scripts/audit.js --json > /tmp/audit.json || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: audit-${{ github.run_id }}
+          path: /tmp/audit.json
+          retention-days: 30
+
+      - name: Explain what just failed
+        if: failure()
+        run: |
+          cat <<'TXT'
+          A probe failed. That means one of the guarantees in docs/AUDIT.md is no
+          longer true on main — not that a test is flaky.
+
+            1. node scripts/audit.js        reproduce locally, same command
+            2. git log -5 --stat            what changed recently
+            3. docs/AUDIT.md#residual-risk-register   is this the known trade-off?
+
+          Fix the code, do not soften the probe. If the probe itself is wrong,
+          that is worth a PR with an explanation.
+          TXT

@@ -15,7 +15,7 @@
   <img alt="tests" src="https://img.shields.io/badge/tests-91%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-21-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
-  <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520.6-3c873a" />
+  <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A522%20LTS-3c873a" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited%20%C2%B7%206%20fixed-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
 </p>
@@ -117,7 +117,7 @@ npm run demo
 
 | Requirement | Notes |
 |---|---|
-| Node.js ≥ 20.6 | `node --version` |
+| Node.js ≥ 22 (LTS) | `node --version` — 20 reached end of life in April 2026 |
 | A model | [Ollama](https://ollama.com) locally (recommended), or any OpenAI-compatible endpoint |
 | Optional | `npm install` only if you want the WhatsApp bridge / QR rendering |
 
@@ -355,6 +355,8 @@ Installs only when you ask. `systemctl stop pinch` and it is gone; `data/` and `
 | `pinch supervise` | restart-on-crash wrapper |
 | `pinch service --install` | boot-time service |
 | `npm run demo` | run everything with a mock brain |
+| `npm run audit` | **self-check** — run the adversarial probes against your own install |
+| `npm run radar` | what has drifted: runtime, CI matrix, pinned actions |
 
 > `pinch brain-test` exists because a model that chats beautifully but never calls a tool turns
 > Pinch into an expensive diary. Better to find out in ten seconds than in a week.
@@ -490,6 +492,36 @@ Listed because the absence of this section is usually a lie:
   that is the design, not an oversight. Never run `PINCH_AUTO_APPROVE=true` on a machine you care about.
 - **No TLS** in the built-in server. On your LAN that is fine; on the open internet, put it behind a
   proxy and set `PINCH_ALLOWED_HOSTS`.
+
+---
+
+## This repo maintains itself (a little)
+
+Three scheduled workflows, and one deliberate rule: **machines gather facts, humans
+make decisions.** No bot commits to `main`, no auto-merge, nothing that opens a PR you
+learn to ignore.
+
+| When | What | Why it exists |
+|---|---|---|
+| Every night | `npm run audit` — the adversarial probes, on a clean checkout | Guard rails rot silently. A refactor in six weeks can reopen a hole no unit test notices, and "we audited it in October" is not a security posture. |
+| Every Monday | `npm run radar` — files an issue | Node reach end-of-life; actions go stale; the CI matrix quietly becomes untested-in-practice. Facts are fetched from `endoflife.date` and the GitHub API, never recalled by a model. |
+| Every push + daily | CodeQL, dependency review, OpenSSF Scorecard | The boring standard hygiene, on the standard rails. All actions are pinned to commit SHAs. |
+
+```bash
+npm run audit     # 14 probes, ~2 seconds, no model, no network
+npm run radar     # diffs this repo against the outside world
+```
+
+The radar caught something real on its first run: this repo was still claiming and
+testing **Node 20, which reached end of life in April 2026**. `engines` is now `>=22`,
+and CI runs 22, 24 and 26 (Node 26 became LTS two days ago). That is the whole point of
+the job — not to write code, but to make sure somebody notices.
+
+The prompt that turns those facts into a proposal — with the security invariants it may
+never touch — is [`.github/prompts/self-improvement.md`](.github/prompts/self-improvement.md).
+It is written for a human to run with an agent on demand, on purpose: a weekly unattended
+bot PR against an assistant that executes shell commands is a bad trade, and the file says
+why at the bottom.
 
 ---
 

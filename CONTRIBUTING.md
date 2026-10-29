@@ -22,8 +22,10 @@ welcome, especially the kind that make it **safer** or **work in more places**.
 
 ```bash
 git clone https://github.com/RANJITHROSAN17/pinch && cd pinch
-npm test          # 35 tests, no model needed
+npm test          # 93 tests, no model needed
+npm run audit     # the adversarial self-check — does the product still refuse attacks?
 npm run demo      # mock brain — the whole app, no Ollama required
+npm run verify    # both of the above, the full gate
 ```
 
 You do **not** need a GPU, an API key or any chat tokens to develop most of Pinch. The mock
@@ -38,7 +40,20 @@ brain exercises the full agent loop, streaming, approvals and reminders.
 | `src/agent.js` | the loop, approvals. Change reluctantly |
 | `src/guard.js` | new honesty rules, with a test each |
 | `src/timeparse.js` | natural-time parsing. Pure, clock-injected, testable |
-| `test/*.test.js` | must pass on Node 20 **and** 22 (CI runs both) |
+| `test/*.test.js` | must pass on Node 22, 24 **and** 26 (CI runs all three) |
+| `scripts/audit.js` | a new probe, if you add a guard rail. Same rules as `test/` |
+| `.github/prompts/self-improvement.md` | the rules an agent must follow before proposing work here |
+
+## If you touch a guard rail
+
+`src/tools.js` (sandbox, command screen, child environment), `src/server.js` (host/origin
+checks) and the panel's renderer are the parts an attacker aims at. Two extra rules:
+
+1. `npm run audit` must still pass — it runs the probes from `docs/AUDIT.md` against your
+   change. If a probe starts failing, the change reintroduced a real defect; the probe is
+   not the thing to edit.
+2. If you find a *new* way through, add it to `scripts/audit.js` **and** `test/audit.test.js`,
+   then fix it. A bypass that is closed but unrecorded will reopen.
 
 ## Adding a tool (the common case)
 

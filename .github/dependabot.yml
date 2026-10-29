@@ -1,0 +1,18 @@
+version: 2
+# This repo has zero runtime dependencies, so there is no npm backlog to
+# babysit. What it does have is pinned CI actions — and a stale pin is a
+# quiet supply-chain risk, so those are worth an automated nudge.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+    groups:
+      actions:
+        patterns: ["*"]

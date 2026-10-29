@@ -1,0 +1,77 @@
+name: Security
+
+# Continuous security scanning. Nothing here can write to the repository: every
+# job is read-only except for the report it uploads to the Security tab.
+#
+#   codeql             — semantic analysis of our own JavaScript
+#   dependency-review  — blocks a PR that introduces a known-vulnerable package
+#   scorecard          — an external grade of this repo's supply-chain hygiene
+#
+# Third-party actions are pinned to a commit SHA, not a tag: a tag is a mutable
+# pointer, and "the code that runs in your CI" is not something to let anyone
+# re-point. Dependabot keeps the pins fresh (.github/dependabot.yml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 4 * * *" # daily, off-peak
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (javascript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: "/language:javascript-typescript"
+
+  dependency-review:
+    name: Dependency review (PRs)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+
+  scorecard:
+    name: OpenSSF Scorecard
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write # required to publish results to the OpenSSF API
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          sarif_file: results.sarif

@@ -49,6 +49,6 @@ body:
     id: platform
     attributes:
       label: OS and Node version
-      placeholder: Windows 11 · Node 22.11 / Ubuntu 24.04 · Node 20.18
+      placeholder: Windows 11 · Node 24.10 / Ubuntu 24.04 · Node 22.20
     validations:
       required: true

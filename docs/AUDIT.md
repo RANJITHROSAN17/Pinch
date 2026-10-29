@@ -383,9 +383,11 @@ reparented to init and ran to completion.
 
 Every `timeoutMs` cap was decorative for anything that backgrounded work — a dev server, a
 watch loop, a `npm run` with workers. Worse, the surviving child kept the parent's stdio
-pipes open, which is why the first full run of the new test file **hung the entire test
-runner instead of reporting a failure**. A leaked process that also hangs its parent turns a
-timeout into an outage.
+pipes open, so `runShell`'s promise **never settled at all**: the tool call hung until the
+orphan exited on its own, which is why the first full run of the new test file hung the
+entire test runner instead of reporting a failure. A leaked process that also hangs its
+parent turns a timeout into an outage — and, for `npm run audit` below, turns a monitor into
+a thing that reports "fine" while it waits.
 
 **What changed** — `src/tools.js`
 
@@ -395,7 +397,9 @@ falling back to the single pid if the group is already gone.
 
 **Guarded by** — *a timeout kills the whole process tree, not just the shell* (runs a
 uniquely-named script, forces a timeout, then asserts `pgrep` finds nothing), and *runShell
-still returns output for commands that finish in time*.
+still returns output for commands that finish in time*. `npm run audit` additionally races the
+probe against a hard ceiling, so a future regression that hangs instead of leaking is
+reported as a failure rather than waited out.
 
 ---
 
@@ -471,11 +475,20 @@ npm install --omit=dev         # zero dependencies; this just writes nothing
 # the whole suite, including every regression test above
 node --test
 
+# the same probes, as a runnable self-check (this is what CI runs nightly)
+npm run audit
+
 # see the regressions fail against the pre-fix code:
 git stash push src/ public/
 node --test --test-force-exit test/audit.test.js test/http-surface.test.js
 git stash pop
 ```
+
+`npm run audit` is the monitor: fourteen probes, no model, no network, about two seconds.
+Against `5242ea2` it reports **7 failures of 14**; against the current tree, 14 of 14 pass.
+It is the same evidence as the tests, packaged so that anyone can point it at their own
+install — and so a scheduled job can point it at `main` every night, because a guarantee
+that was true in October is not a guarantee in March.
 
 Before the fixes, that stashed run produced 27 failures — and, on the process-lifecycle
 test, did not terminate at all. After them: 91 tests, 91 passing, 0 failing.
