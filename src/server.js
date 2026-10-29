@@ -64,13 +64,11 @@ function json(res, code, payload) {
 }
 
 /** Keep a request-controlled string from doing anything but reading. */
-function scrubLog(value) {
-  // Remove line breaks first and explicitly — a log line is one line, and both
-  // a forgeable second entry and a terminal escape sequence start with one.
-  return String(value == null ? "" : value)
-    .replace(/[\r\n]+/g, " ")
-    .replace(/[^\x20-\x7e]/g, "?")
-    .slice(0, 200);
+const METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+
+/** A method name we recognise, or a constant. Never the caller's string. */
+function methodOf(value) {
+  return METHODS.has(value) ? value : "OTHER";
 }
 
 /** What a client is allowed to be told, by status code. */
@@ -392,7 +390,10 @@ export function createPinchServer() {
       // constant format with args rather than interpolated, and the URL is
       // scrubbed of control bytes first, so a request can neither slip a
       // newline into the log nor smuggle a %s into the format.
-      console.error("[pinch] %s %s -> %d:", req.method, scrubLog(req.url), status, err);
+      // What gets logged is chosen from fixed sets and counts: the method if it
+      // is one of the seven, the length of the URL, the status. The request text
+      // itself never reaches the log, so there is nothing to inject.
+      console.error("[pinch] %s request, %d url bytes, failed %d:", methodOf(req.method), req.url.length, status, err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }
