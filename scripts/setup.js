@@ -198,7 +198,11 @@ async function checkTelegram(token) {
   const bad = shapeOf("telegram", token);
   if (bad) return { ok: false, error: bad };
   try {
-    const { body } = await jsonFetch(`https://api.telegram.org/bot${token}/getMe`);
+    // The token is pasted from a browser and ends up in a URL path. Percent-
+    // encode it so a stray "/", "?", "#" or space cannot reshape the request
+    // to the provider — the shape regex above is a courtesy, this is the
+    // actual confinement.
+    const { body } = await jsonFetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/getMe`);
     if (!body?.ok) return { ok: false, error: body?.description || "invalid token" };
     return { ok: true, label: `@${body.result.username}` };
   } catch (err) {

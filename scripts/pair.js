@@ -15,7 +15,14 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const env = loadEnv(ROOT);
-const port = env.PINCH_PORT || "7777";
+// A port is a number, so make it one. Whatever .env said, what reaches a
+// log line below is the result of arithmetic on digits and a range check —
+// never the file's text.
+function readPort(raw) {
+  const n = Number.parseInt(String(raw == null ? "" : raw), 10);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : 7777;
+}
+const port = readPort(env.PINCH_PORT);
 const key = env.PINCH_KEY || "";
 
 const C = {

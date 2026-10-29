@@ -63,6 +63,13 @@ function json(res, code, payload) {
   res.end(body);
 }
 
+/** Keep a request-controlled string from doing anything but reading. */
+function scrubLog(value) {
+  return String(value == null ? "" : value)
+    .replace(/[^\x20-\x7e]/g, "?")
+    .slice(0, 200);
+}
+
 /** What a client is allowed to be told, by status code. */
 const STATUS_TEXT = {
   400: "bad request — check the body and the URL encoding",
@@ -378,8 +385,11 @@ export function createPinchServer() {
       // code; anything exception-shaped goes to the log, where it helps.
       const message = STATUS_TEXT[status] || (status >= 500 ? "internal error — see the server log" : "request refused");
       // `req.url` here, not the parsed `url`: this catch also covers the case
-      // where parsing the URL itself is what threw.
-      console.error(`[pinch] ${req.method} ${req.url} → ${status}:`, err);
+      // where parsing the URL itself is what threw. The line is passed as a
+      // constant format with args rather than interpolated, and the URL is
+      // scrubbed of control bytes first, so a request can neither slip a
+      // newline into the log nor smuggle a %s into the format.
+      console.error("[pinch] %s %s -> %d:", req.method, scrubLog(req.url), status, err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }
