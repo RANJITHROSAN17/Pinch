@@ -1,0 +1,91 @@
+name: CI
+
+# Two jobs: the unit/agent tests, and a boot smoke test that starts the whole
+# server with the mock brain and talks to it over HTTP. The smoke test matters
+# more than it looks — it proves the panel, the SSE stream and the approval
+# endpoint work on a clean machine with no model installed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Unit and agent tests
+        run: npm test
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Boot with the mock brain
+        env:
+          LLM_PROVIDER: mock
+          PINCH_KEY: ""
+          PINCH_PORT: "7777"
+          PINCH_WORKSPACE: ${{ github.workspace }}
+        run: |
+          node src/index.js > /tmp/pinch.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:7777/api/health > /dev/null && break
+            sleep 1
+          done
+          cat /tmp/pinch.log
+
+      - name: Panel is served
+        run: curl -sf http://localhost:7777/ | grep -q "Pinch"
+
+      - name: Health endpoint reports a brain
+        run: |
+          curl -sf http://localhost:7777/api/health | tee /tmp/health.json
+          grep -q '"ok":true' /tmp/health.json
+
+      - name: Agent runs a tool end to end over SSE
+        run: |
+          curl -sN -X POST http://localhost:7777/api/chat \
+            -H 'content-type: application/json' \
+            -d '{"sessionId":"ci","text":"calc (1200*1.18)/3"}' > /tmp/sse.txt
+          cat /tmp/sse.txt
+          grep -q "calculator" /tmp/sse.txt
+          grep -q "472" /tmp/sse.txt
+          grep -q "event: final" /tmp/sse.txt
+
+      - name: A denied command must not run
+        run: |
+          curl -sN -X POST http://localhost:7777/api/chat \
+            -H 'content-type: application/json' \
+            -d '{"sessionId":"ci-deny","text":"run touch SHOULD_NOT_EXIST"}' > /tmp/sse2.txt &
+          sleep 3
+          ID=$(grep -o '"id":"ap_[^"]*"' /tmp/sse2.txt | head -1 | cut -d'"' -f4)
+          test -n "$ID"
+          curl -sf -X POST http://localhost:7777/api/approve \
+            -H 'content-type: application/json' \
+            -d "{\"id\":\"$ID\",\"allowed\":false}"
+          sleep 2
+          test ! -f SHOULD_NOT_EXIST
+          echo "denied command correctly did not execute"
+
+      - name: No secrets committed
+        run: |
+          if git ls-files | grep -qx ".env"; then echo ".env must never be committed"; exit 1; fi
+          if git ls-files | grep -q "^data/"; then echo "data/ holds conversations; keep it out"; exit 1; fi
+          echo "tree is clean of secrets and personal data"

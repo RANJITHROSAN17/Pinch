@@ -1,0 +1,14 @@
+# ── secrets ──
+.env
+data/
+*.log
+
+# ── optional deps ──
+node_modules/
+package-lock.json
+
+# ── noise ──
+.DS_Store
+Thumbs.db
+__pycache__/
+.venv/

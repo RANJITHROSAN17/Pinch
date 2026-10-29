@@ -1,0 +1,36 @@
+{
+  "name": "pinch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinch 🦞 — a private, local-first personal AI assistant you message from Telegram, Discord, Slack, WhatsApp or the browser, with voice on your phone.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "bin": {
+    "pinch": "./bin/pinch.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "setup": "node scripts/setup.js",
+    "doctor": "node scripts/setup.js --check",
+    "test": "node --test test/",
+    "demo": "node scripts/demo.js"
+  },
+  "optionalDependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "keywords": [
+    "ai-assistant",
+    "local-first",
+    "ollama",
+    "telegram",
+    "discord",
+    "slack",
+    "whatsapp",
+    "mcp"
+  ],
+  "license": "MIT"
+}

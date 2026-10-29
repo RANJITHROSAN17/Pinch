@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Pinch — a private, local-first personal AI assistant">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#160a0c"/>
+      <stop offset="55%" stop-color="#1d0d11"/>
+      <stop offset="100%" stop-color="#10201e"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff8f6b"/>
+      <stop offset="60%" stop-color="#ff6a4d"/>
+      <stop offset="100%" stop-color="#e0502f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.1" r="0.75">
+      <stop offset="0%" stop-color="#ff6a4d" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#ff6a4d" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <rect width="1200" height="300" fill="url(#grid)"/>
+  <rect width="1200" height="300" fill="url(#glow)"/>
+
+  <!-- claws -->
+  <g transform="translate(96 150)" fill="none" stroke="url(#coral)" stroke-width="9" stroke-linecap="round">
+    <path d="M-18 -46 C -52 -74, -74 -52, -62 -30"/>
+    <path d="M-62 -30 C -76 -18, -62 -2, -46 -12"/>
+    <path d="M18 -46 C 52 -74, 74 -52, 62 -30"/>
+    <path d="M62 -30 C 76 -18, 62 -2, 46 -12"/>
+    <path d="M0 26 L 0 62 M -26 30 L -44 60 M 26 30 L 44 60"/>
+  </g>
+  <ellipse cx="96" cy="150" rx="26" ry="42" fill="url(#coral)" opacity="0.95"/>
+  <circle cx="86" cy="132" r="4.5" fill="#2a100a"/>
+  <circle cx="106" cy="132" r="4.5" fill="#2a100a"/>
+
+  <text x="196" y="132" font-family="ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="92" font-weight="800" fill="#ffe9e0" letter-spacing="2">PINCH</text>
+
+  <text x="200" y="180" font-family="ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="27" fill="#c9a196">a personal AI assistant that lives on your own machine</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">
+    <g fill="#ffd9c7">
+      <rect x="200" y="206" width="188" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="216" y="230">private · local</text>
+
+      <rect x="400" y="206" width="164" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="416" y="230">telegram</text>
+
+      <rect x="576" y="206" width="150" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="592" y="230">discord</text>
+
+      <rect x="738" y="206" width="134" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="754" y="230">slack</text>
+
+      <rect x="884" y="206" width="182" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="900" y="230">whatsapp</text>
+
+      <rect x="1078" y="206" width="102" height="36" rx="18" fill="#2b1518" stroke="#4a2626"/>
+      <text x="1094" y="230">voice</text>
+    </g>
+  </g>
+
+  <text x="200" y="272" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        font-size="16" fill="#8d6a62">npm run setup → npm start → talk to it from your phone</text>
+</svg>
