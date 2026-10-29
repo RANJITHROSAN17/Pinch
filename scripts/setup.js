@@ -16,7 +16,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, renameSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
@@ -427,10 +427,17 @@ async function setup() {
   hint("Example: Name: Ranjith · City: Chennai · Work: ML engineer at Accenture");
   const existingProfile = join(ROOT, "data", "profile.md");
   const profileLines = [];
-  if (existsSync(existingProfile)) {
-    const current = readFileSync(existingProfile, "utf8").trim();
+  // Read without an existsSync probe: ENOENT means "no profile yet", and there
+  // is no check-then-use window for a race to slip through.
+  let current = "";
+  try {
+    current = readFileSync(existingProfile, "utf8").trim();
+  } catch {
+    current = "";
+  }
+  if (current) {
     ok(`you already have a profile (${current.split("\n").length} line(s)) — press Enter to keep it`);
-    if (current) hint(current.split("\n").slice(0, 3).join(" · ").slice(0, 150));
+    hint(current.split("\n").slice(0, 3).join(" · ").slice(0, 150));
   }
   for (let i = 0; i < 6; i++) {
     const line = (await question(`  ${C.dim(i === 0 ? "fact" : "more (blank to stop)")} ${C.coral("›")} `)).trim();
@@ -442,7 +449,11 @@ async function setup() {
     // there is no window between "does it exist" and "write it".
     try {
       mkdirSync(dirname(existingProfile), { recursive: true });
-      writeFileSync(existingProfile, profileLines.join("\n") + "\n", "utf8");
+      // Write-then-rename: the file you already have is either the old one or
+      // the new one, never a half-written mixture (same trick store.js uses).
+      const tmp = `${existingProfile}.${process.pid}.tmp`;
+      writeFileSync(tmp, profileLines.join("\n") + "\n", "utf8");
+      renameSync(tmp, existingProfile);
       ok(`saved ${profileLines.length} fact(s) to data/profile.md`);
     } catch (err) {
       warn(`could not write the profile: ${err.message}`);

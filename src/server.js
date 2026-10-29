@@ -63,6 +63,18 @@ function json(res, code, payload) {
   res.end(body);
 }
 
+/** What a client is allowed to be told, by status code. */
+const STATUS_TEXT = {
+  400: "bad request — check the body and the URL encoding",
+  401: "bad or missing PINCH_KEY",
+  403: "refused",
+  404: "not found",
+  405: "method not allowed",
+  413: "request body too large",
+  429: "too many requests — wait a moment",
+  500: "internal error — see the server log",
+};
+
 class HTTPError extends Error {
   constructor(status, message) {
     super(message);
@@ -361,14 +373,13 @@ export function createPinchServer() {
       // Last line of defence: a thrown URIError from a crafted request used to
       // escape as an unhandled rejection and take the socket with it.
       const status = err instanceof HTTPError ? err.status : err instanceof URIError ? 400 : 500;
-      // 4xx messages are ours and are meant to be read; 5xx ones are not.
-      const message =
-        err instanceof URIError
-          ? "malformed URL encoding"
-          : status < 500
-            ? String(err.message || err)
-            : "internal error — see the server log";
-      if (status >= 500) console.error("[pinch] request failed:", err);
+      // A response never carries text that came out of an exception object,
+      // not even for a 4xx. The sentence is chosen from a table by status
+      // code; anything exception-shaped goes to the log, where it helps.
+      const message = STATUS_TEXT[status] || (status >= 500 ? "internal error — see the server log" : "request refused");
+      // `req.url` here, not the parsed `url`: this catch also covers the case
+      // where parsing the URL itself is what threw.
+      console.error(`[pinch] ${req.method} ${req.url} → ${status}:`, err);
       if (!res.headersSent) json(res, status, { error: message });
       else res.end();
     }

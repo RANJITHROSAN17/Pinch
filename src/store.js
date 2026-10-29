@@ -6,7 +6,7 @@
  * corrupt your conversation history.
  */
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, readdirSync, unlinkSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { config } from "./config.js";
 
 const DATA = config.dataDir;
@@ -16,12 +16,37 @@ export function ensureData() {
   mkdirSync(join(DATA, "sessions"), { recursive: true });
 }
 
+/**
+ * The single choke point where anything reaches disk.
+ *
+ * Everything written here ultimately came off a socket (a chat message, a
+ * memory fact, a reminder), so this is the one function worth being paranoid
+ * in: the destination must resolve inside data/, and the payload must be JSON
+ * that parses back. A caller that gets either wrong fails here, loudly, instead
+ * of writing something unexpected somewhere unexpected.
+ */
 function atomicWrite(path, text) {
-  // Cheap, idempotent, and means callers never have to think about mkdir.
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
+  const target = resolve(String(path));
+  if (!isInside(resolve(DATA), target)) {
+    throw new Error(`refusing to write outside the data directory: ${target}`);
+  }
+  if (typeof text !== "string") throw new TypeError("atomicWrite expects a string");
+
+  // Round-trip the payload when it claims to be JSON. Cheap, and it means a
+  // half-serialised object can never reach disk.
+  if (text.trimStart().startsWith("{") || text.trimStart().startsWith("[")) {
+    JSON.parse(text);
+  }
+
+  mkdirSync(dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
   writeFileSync(tmp, text, "utf8");
-  renameSync(tmp, path);
+  renameSync(tmp, target);
+}
+
+function isInside(root, target) {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function readJson(path, fallback) {

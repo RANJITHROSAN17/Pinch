@@ -53,25 +53,26 @@ try {
   // optional dependency; fall through to the URL
 }
 
-if (qrcode) {
-  qrcode.generate(url, { small: true });
-} else {
-  console.log(C.dim("   (install `qrcode-terminal` for a scannable QR: npm i qrcode-terminal)\n"));
-}
-
 // The QR carries the full URL, key included — that is a deliberate, local,
-// one-screen transfer. The terminal does not: paste a keyed URL into a chat
-// window or a bug report once and the secret that guards this machine is
-// public. `--show-key` is the explicit opt-in for people who need the text.
-const showKey = process.argv.includes("--show-key");
-if (showKey && key) {
-  console.log(`   ${C.bold(url)}\n`);
-  console.log(C.dim(`   (this line contains your key — do not paste it anywhere)\n`));
-} else {
-  const hint = !key ? "" : qrcode ? "  (the QR above includes your key)" : "  (add ?key=… from .env)";
-  console.log(`   ${C.bold(`http://${lan[0]}:${port}`)}${C.dim(hint)}\n`);
-  if (key) console.log(C.dim("   need the URL as text? `pinch pair --show-key` prints it, key included.\n"));
-}
+// one-screen transfer. The terminal does not print the key at all: paste a
+// keyed URL into a chat window or a bug report once and the secret that guards
+// this machine is public. Nothing logged below is derived from `key`; the only
+// thing that ever contains it is the QR payload.
+const base = `http://${lan[0] || "localhost"}:${port}`;
+
+if (qrcode) qrcode.generate(url, { small: true });
+
+console.log(`   ${C.bold(base)}`);
+console.log(
+  key
+    ? C.dim(
+        qrcode
+          ? "   the QR above already includes your key.\n   no camera? append ?key=… — it is the PINCH_KEY line in .env\n"
+          : "   add ?key=… to that URL — it is the PINCH_KEY line in .env\n   (npm i qrcode-terminal shows a QR with the key baked in)\n"
+      )
+    : ""
+);
+
 for (const addr of lan.slice(1)) {
   console.log(C.dim(`   also: http://${addr}:${port}`));
 }
