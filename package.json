@@ -39,5 +39,13 @@
     "whatsapp",
     "mcp"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "pinch": {
+    "node": {
+      "min": 22,
+      "dropMinAt": "2027-04-30",
+      "becomes": 24,
+      "reason": "Node 22 reaches end of life; engines.node moves to >=24 and 22 leaves the CI matrix."
+    }
+  }
 }

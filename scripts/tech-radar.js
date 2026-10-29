@@ -109,12 +109,31 @@ if (nodeCycles && engineMajor) {
       `raise engines.node to >=${activeLts.at(-1)?.cycle || 22}`
     );
   } else if (claimed.support && claimed.support <= today) {
-    note(
-      "low",
-      "runtime",
-      `Node ${claimed.cycle} is in maintenance (security fixes only) since ${claimed.support}; EOL ${claimed.eol}`,
-      "plan the next major bump before the EOL date"
-    );
+    // A decided policy is not drift. If package.json documents that the floor
+    // stays on this cycle until a specific date, say so once and stop nagging
+    // — but keep escalating the moment that date passes (the `eol` branch above
+    // takes over as soon as the cycle is out of support).
+    const policy = pkg.pinch?.node;
+    const decided =
+      policy &&
+      Number(policy.min) === Number(claimed.cycle) &&
+      String(policy.dropMinAt || "") > today;
+
+    if (decided) {
+      note(
+        "info",
+        "runtime",
+        `Node ${claimed.cycle} is in maintenance until ${claimed.eol} — covered by the support policy (docs/SUPPORT.md); the floor rises to ${policy.becomes ?? "the next LTS"} on ${policy.dropMinAt}`,
+        ""
+      );
+    } else {
+      note(
+        "low",
+        "runtime",
+        `Node ${claimed.cycle} is in maintenance (security fixes only) since ${claimed.support}; EOL ${claimed.eol}`,
+        "plan the next major bump before the EOL date"
+      );
+    }
   } else {
     note("info", "runtime", `Node ${claimed.cycle} is supported until ${claimed.eol}`, "");
   }

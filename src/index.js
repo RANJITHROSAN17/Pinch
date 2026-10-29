@@ -12,7 +12,10 @@ import { createPinchServer, lanAddresses, status } from "./server.js";
 import { startChannels } from "./channels/index.js";
 import { brain } from "./brain.js";
 import { ensureData, pendingReminders } from "./store.js";
+import { existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { startScheduler } from "./scheduler.js";
+import { nodeSupport } from "./runtime.js";
 
 const c = {
   coral: (s) => `\x1b[38;5;209m${s}\x1b[0m`,
@@ -76,6 +79,25 @@ async function main() {
 
   const addrs = lanAddresses();
   console.log("");
+
+  // ── runtime ────────────────────────────────────────────────────────────
+  // Say it once per install, not on every boot. A warning you see forty times
+  // a day is wallpaper; one you see once is information.
+  const support = nodeSupport();
+  if (support.message) {
+    let shown = false;
+    try {
+      const marker = join(config.dataDir, `notice-node-${support.major}`);
+      shown = existsSync(marker);
+      if (!shown) {
+        mkdirSync(config.dataDir, { recursive: true });
+        writeFileSync(marker, new Date().toISOString());
+      }
+    } catch {
+      shown = false; // unwritable data dir: better to repeat than to stay silent
+    }
+    if (!shown) log.warn(support.message);
+  }
   log.info(`web panel: ${c.bold(`http://localhost:${config.port}`)}`);
   for (const addr of addrs) {
     // No fragment of the key is printed: terminal scrollback ends up in screen
