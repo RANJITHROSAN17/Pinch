@@ -15,7 +15,7 @@
     "dev": "node --watch src/index.js",
     "setup": "node scripts/setup.js",
     "doctor": "node scripts/setup.js --check",
-    "test": "node --test test/",
+    "test": "node --test",
     "demo": "node scripts/demo.js"
   },
   "optionalDependencies": {
