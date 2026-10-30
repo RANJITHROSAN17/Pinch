@@ -1,7 +1,13 @@
 name: Growth loop
 
-# Daily: research the market, propose what is worth building, and fix the parts
+# Hourly: research the market, propose what is worth building, and fix the parts
 # that are mechanical — in that order, and with a fence around the last one.
+#
+# Hourly is not the same as "one issue an hour". The loop files only when a
+# candidate clears the bar, has not been proposed in 30 days, and the board has
+# room for it; the hour of the day decides which class of signal leads, so over
+# a day every source gets its turn instead of the loudest one winning every
+# hour. Most runs are quiet, and a quiet run is a passing run.
 #
 #   1. RESEARCH  scripts/market.js reads the READMEs of six comparable
 #                assistants and diffs them against docs/CAPABILITIES.json.
@@ -19,7 +25,9 @@ name: Growth loop
 
 on:
   schedule:
-    - cron: "41 5 * * *" # daily, 05:41 UTC
+    # Hourly. Off the top of the hour on purpose: GitHub's scheduler is busiest
+    # at :00 and a run queued behind the crowd is a run that reports late.
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -111,7 +119,8 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/growth.js --existing /tmp/issues.json --market /tmp/market.json \
-            --merged "${{ steps.rate.outputs.merged }}" --json > /tmp/decision.json
+            --merged "${{ steps.rate.outputs.merged }}" --hour "$(date -u +%H)" \
+            --json > /tmp/decision.json
           DECISION="$(jq -r .decision /tmp/decision.json)"
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
           {
@@ -121,8 +130,9 @@ jobs:
             echo
             echo "| | |"
             echo "|---|---|"
-            echo "| Quota | $(jq -r .quota /tmp/decision.json) (from $(jq -r .merged /tmp/decision.json) merged) |"
+            echo "| Quota | $(jq -r .quota /tmp/decision.json) (from $(jq -r .merged /tmp/decision.json) merged), cap $(jq -r .maxOpen /tmp/decision.json) |"
             echo "| Market | $(jq -r .market /tmp/decision.json) |"
+            echo "| This hour | $(jq -r .shard /tmp/decision.json) (UTC $(jq -r .hour /tmp/decision.json)) |"
             echo
             jq -r '.files[]? | "- **filed:** \(.title)"' /tmp/decision.json
             jq -r '.annotates[]? | "- **commented on #\(.issue)**"' /tmp/decision.json

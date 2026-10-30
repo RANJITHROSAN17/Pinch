@@ -26,6 +26,8 @@ import {
   historyFor,
   plan,
   quotaFor,
+  shardFor,
+  rankForShard,
   collectMarket,
   envReadsIn,
   collectCliDrift,
@@ -131,6 +133,52 @@ test("plan() with nothing above the floor stays quiet", () => {
   const r = plan([weak], [], { quota: 3, maxOpen: 5 });
   assert.equal(r.decision, "skip");
   assert.equal(r.files.length, 0);
+});
+
+/* ──────────────────── hourly attention rotation ────────────────────────── */
+
+test("the hour of the day decides which class leads", () => {
+  assert.equal(shardFor(0).kind, "demand");
+  assert.equal(shardFor(5).kind, "demand");
+  assert.equal(shardFor(6).kind, "market-adjacent");
+  assert.equal(shardFor(12).kind, "market-gap");
+  assert.equal(shardFor(18).kind, "tests");
+  assert.equal(shardFor(23).kind, "tests");
+});
+
+test("an impossible hour cannot break the rotation", () => {
+  assert.equal(shardFor(NaN).kind, "demand");
+  assert.equal(shardFor(-1).kind, "tests", "negative hours wrap, they do not throw");
+  assert.equal(shardFor(25).kind, "demand", "hours past 23 wrap too");
+});
+
+test("the shard cannot promote a weak candidate past a strong one", () => {
+  const weak = strong({ kind: "market-gap", fingerprint: "market:x", impact: 1, confidence: 1, demand: 1, effort: 5, title: "weak market" });
+  const strongOne = strong({ kind: "tests", fingerprint: "tests:y", impact: 3, confidence: 3, demand: 1, effort: 1, title: "strong tests" });
+  const ranked = rankForShard([weak, strongOne], shardFor(12));
+  assert.equal(ranked[0].fingerprint, "tests:y", "0.2 must not outrank 9 because the clock struck twelve");
+});
+
+test("the shard does break a near-tie in its own favour", () => {
+  const a = strong({ kind: "tests", fingerprint: "tests:a", impact: 3, confidence: 3, demand: 1, effort: 1 });
+  const b = strong({ kind: "market-gap", fingerprint: "market:b", impact: 3, confidence: 3, demand: 1, effort: 1 });
+  // Equal scores: the shard's class should lead, and only because it is a tie.
+  const ranked = rankForShard([a, b], shardFor(12));
+  assert.equal(ranked[0].fingerprint, "market:b");
+});
+
+test("a shard that matches nothing leaves the ranking untouched", () => {
+  const a = strong({ fingerprint: "tests:a", impact: 3, confidence: 3, demand: 3, effort: 1 });
+  const b = strong({ fingerprint: "docs:b", impact: 2, confidence: 3, demand: 1, effort: 1 });
+  const ranked = rankForShard([a, b], shardFor(0));
+  assert.deepEqual(ranked.map((c) => c.fingerprint), ["tests:a", "docs:b"]);
+});
+
+test("plan() accepts a shard without changing how many it files", () => {
+  const cands = ["a", "b", "c"].map((n) => strong({ fingerprint: `tests:${n}`, impact: 3, confidence: 3, demand: 3, effort: 1 }));
+  const plain = plan(cands, [], { quota: 2, maxOpen: 6 });
+  const sharded = plan(cands, [], { quota: 2, maxOpen: 6, shard: shardFor(18) });
+  assert.equal(plain.files.length, sharded.files.length);
 });
 
 /* ────────────────────────── environment reads ──────────────────────────── */
