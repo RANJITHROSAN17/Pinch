@@ -9,6 +9,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, normalize, extname, resolve, sep } from "node:path";
 import { networkInterfaces } from "node:os";
+import { extract, putAttachment, takeAttachments, MAX_BYTES } from "./attachments.js";
 import { config } from "./config.js";
 import { brain } from "./brain.js";
 import { runAgent, answerApproval, pendingApprovals } from "./agent.js";
@@ -88,6 +89,27 @@ class HTTPError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+/**
+ * Raw bytes, for uploads. Deliberately not multipart: a hand-written multipart
+ * parser is a parser for attacker-shaped input, and the browser can send the
+ * file as the whole body with its name in a header. Fewer moving parts on the
+ * one endpoint that accepts a file.
+ */
+async function readRaw(req, limit) {
+  const declared = Number(req.headers["content-length"] || 0);
+  if (declared > limit) throw new HTTPError(413, `file larger than ${Math.round(limit / 1e6)} MB`);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    // Checked against the bytes actually arriving, not just the header, because
+    // a header is a claim.
+    if (size > limit) throw new HTTPError(413, `file larger than ${Math.round(limit / 1e6)} MB`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 async function readBody(req, limit = 2_000_000) {
@@ -272,6 +294,29 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (path === "/api/attach" && req.method === "POST") {
+    const raw = await readRaw(req, MAX_BYTES);
+    if (raw.length === 0) return json(res, 400, { error: "empty upload" });
+    // The name is a display string and nothing else — attachments.js never
+    // builds a path from it, and the queue below lives in memory.
+    const name = String(req.headers["x-filename"] || "attachment").slice(0, 200);
+    const record = extract(raw, name);
+    const id = putAttachment(record);
+    return json(res, 200, {
+      id,
+      name: record.name,
+      kind: record.kind,
+      bytes: record.bytes,
+      // A preview, not the whole document: the panel shows what was understood
+      // so a wrong guess (a scan read as empty, a zip read as unsupported) is
+      // visible before the message is sent.
+      preview: (record.text || "").slice(0, 240),
+      chars: (record.text || "").length,
+      images: record.images.length,
+      note: record.note,
+    });
+  }
+
   if (path === "/api/chat" && req.method === "POST") {
     const body = await readBody(req);
     const text = String(body.text || "").trim();
@@ -287,9 +332,11 @@ async function handleApi(req, res, url) {
 
     const stream = sse(res);
     try {
+      const attachments = takeAttachments(body.attachments);
       const result = await runAgent({
         sessionId,
         text,
+        attachments,
         channel: "web",
         target: sessionId,
         onEvent: (event) => stream.send("step", event),

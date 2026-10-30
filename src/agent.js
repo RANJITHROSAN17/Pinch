@@ -16,6 +16,7 @@ import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError, screenCommand } from "
 import { loadSession, appendMessage, loadMemory } from "./store.js";
 import { auditReply, renderGuardNote } from "./guard.js";
 import { addressFor } from "./outbound.js";
+import { renderForPrompt } from "./attachments.js";
 import { config as cfg } from "./config.js";
 
 const MAX_ROUNDS = 8;
@@ -90,7 +91,7 @@ function describeCall(name, args) {
  * @param {string} opts.channel
  * @param {(event: object) => void} [opts.onEvent] live progress for the UI
  */
-export async function runAgent({ sessionId, text, channel = "web", target = "", onEvent = () => {} }) {
+export async function runAgent({ sessionId, text, attachments = [], channel = "web", target = "", onEvent = () => {} }) {
   const session = loadSession(sessionId);
   const history = session.messages
     .filter((m) => m.role === "user" || m.role === "assistant")
@@ -99,10 +100,18 @@ export async function runAgent({ sessionId, text, channel = "web", target = "", 
 
   appendMessage(sessionId, { role: "user", content: text });
 
+  // Attached files become a labelled block ahead of the question, and images
+  // travel with the message itself for a vision-capable model. The wrapper is
+  // the mitigation against a document that contains instructions; see
+  // docs/AUDIT.md for why it is a mitigation and not a promise.
+  const attachmentBlock = renderForPrompt(attachments);
+  const userTurn = { role: "user", content: attachmentBlock.text ? `${attachmentBlock.text}\n\n---\n\n${text}` : text };
+  if (attachmentBlock.images.length) userTurn.images = attachmentBlock.images;
+
   let messages = [
     { role: "system", content: buildSystemPrompt({ channel }) },
     ...history,
-    { role: "user", content: text },
+    userTurn,
   ];
 
   const trace = [];
