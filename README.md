@@ -51,6 +51,9 @@ npm run demo
 
 - **An assistant that lives where your files are.** Not a chat window with a browser
   plugin: it can read and write files, run commands, and search, up to 8 tool calls per turn.
+- **Send it a file.** Drop a PDF, a screenshot or a spreadsheet on the panel and ask
+  about it — extracted in-process, never uploaded anywhere. No OCR for scans, and it
+  says so instead of pretending.
 - **On your machine, with your model.** Default is Ollama on the same laptop. Your
   conversations are JSON files in `data/` — `rm -rf data` is a valid uninstall.
 - **With a gate on anything destructive.** Shell commands, file writes, screenshots and

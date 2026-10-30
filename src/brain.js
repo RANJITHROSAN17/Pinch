@@ -105,7 +105,12 @@ function toOllamaMessages(messages) {
         tool_calls: m.toolCalls.map((tc) => ({ function: { name: tc.name, arguments: tc.arguments } })),
       };
     }
-    return { role: m.role, content: m.content ?? "" };
+    const out = { role: m.role, content: m.content ?? "" };
+    // Ollama takes raw base64 in an `images` array on the message itself —
+    // strings, not the richer objects the attachment layer keeps, so the
+    // provider never has to know about our record shape.
+    if (m.images?.length) out.images = m.images.map((img) => (typeof img === "string" ? img : img.data));
+    return out;
   });
 }
 
@@ -192,6 +197,17 @@ function toOpenAiMessages(messages) {
       return { role: "tool", tool_call_id: m.toolCallId, content: String(m.content ?? "") };
     }
     const out = { role: m.role, content: m.content ?? "" };
+    if (m.images?.length) {
+      // The OpenAI chat format wants content as parts, text first, then one
+      // image_url per image as a data URI — no upload, no external host.
+      out.content = [
+        ...(m.content ? [{ type: "text", text: m.content }] : []),
+        ...m.images.map((img) => ({
+          type: "image_url",
+          image_url: { url: `data:${img.mime || "image/png"};base64,${img.data || img}` },
+        })),
+      ];
+    }
     if (m.toolCalls?.length) {
       out.tool_calls = m.toolCalls.map((tc) => ({
         id: tc.id,
