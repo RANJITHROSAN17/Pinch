@@ -1,105 +1,167 @@
 # How this repository grows
 
-Pinch improves on a loop that runs every day: **a machine looks, a human
-decides, whoever is free builds.** This page documents the machine part, so that
-when it files something odd you can point at the rule it broke.
+Pinch improves on a loop that runs every day: **a machine researches and
+proposes, a human decides, the machine fixes what is mechanical.** This page
+documents each part, the rate limit that keeps it from becoming noise, and the
+fence that keeps it from becoming dangerous.
 
 ```text
-05:41 UTC daily  ◄─ .github/workflows/growth.yml ─┐
-                                                  │
-      scripts/growth.js measures the checkout ────┤
-                                                  │
-        ┌─────────────┬─────────────────┬─────────┴────────┐
-        │             │                 │                  │
-     "file it"   "annotate it"      "stay quiet"        paused by
-        │             │                 │            .github/growth-pause
-   one issue   a spec comment      the normal case
+05:41 UTC daily  ──►  .github/workflows/growth.yml
+                       │
+    ┌──────────────────┼───────────────────────┐
+    │                  │                       │
+ 1. RESEARCH        2. PROPOSE              3. FIX
+ scripts/market.js  scripts/growth.js       scripts/manager.js
+    │                  │                       │
+ six competitors'   up to a quota of        one mechanical fix,
+ READMEs vs our     issues, or a spec       full suite + audit,
+ capability list    comment on yours        one PR, human merges
 ```
 
-## What it looks at
+Three jobs that already existed stay as they are: the **nightly audit** asks
+"do the guard rails still hold?", the **weekly radar** asks "has the ground moved
+under us?", and **CodeQL** asks "is any of this code dangerous?". This loop asks
+the fourth question: *what should be built next?*
 
-Every signal is measured from the checkout in front of it. No model, no network
-call, no API key — the job runs in about two minutes and a maintainer can
-reproduce any decision with one command.
+---
 
-| Signal | How it is measured | Why it matters |
+## 1. Research — where "compete with the top assistants" actually comes from
+
+`scripts/market.js` fetches the README of six comparable projects and matches
+their feature lists against [`CAPABILITIES.json`](CAPABILITIES.json):
+
+| Project | Why it is in the comparison set |
+| --- | --- |
+| `open-webui/open-webui` | the most-installed local web UI |
+| `librechat-ai/LibreChat` | closest feature-parity target |
+| `Mintplex-Labs/anything-llm` | documents + agents, works offline |
+| `janhq/jan` | local-first desktop app |
+| `khoj-ai/khoj` | personal assistant with scheduled agents |
+| `openinterpreter/open-interpreter` | the code-execution benchmark |
+
+The rule that makes this honest: **a competitor claim comes from that
+competitor's own documentation, fetched today, quoted with a URL.** Not from a
+model's memory of what ChatGPT did in 2024. Every gap in a proposal names which
+repos document it and which keywords matched.
+
+Three things the researcher refuses to do:
+
+- **Credit a capability it cannot prove.** An inventory entry marked `have`
+  with no evidence is downgraded to `unproven` and treated as absent. A test
+  checks that every `have` claim cites a file that exists.
+- **Propose against the product's identity.** Every capability carries a
+  `policy`: `in-scope`, `settled`, or `out-of-scope`. Multi-user accounts are
+  `out-of-scope` — four of six competitors ship them, and it is still not
+  backlog, because Pinch is one person on one laptop. A gap the product has
+  decided not to close is not a work item.
+- **Confuse partial with missing.** A `partial` capability (voice, file upload)
+  is usually cheaper to close than a missing one and is scored accordingly.
+
+Run it yourself: `node scripts/market.js`. With `--offline` it reuses the last
+snapshot in `docs/market-snapshot.json` instead of the network.
+
+---
+
+## 2. Propose — "as many as needed" is a quota that is earned
+
+`scripts/growth.js` turns measurements and research into proposals. The rate is
+not a constant somebody guessed:
+
+| Merged proposals a human accepted | Proposals allowed per run |
+| --- | --- |
+| 0–1 | **1** |
+| 2–3 | 2 |
+| 4–5 | 3 |
+| 6–7 | 4 |
+| 8+ | **5** (hard cap) |
+
+A loop that has never had a suggestion accepted does not get to open five at
+once. One with a track record does not have to be told one at a time. A closed
+proposal counts as *no* trust earned — only a merge does.
+
+The open-proposal cap scales with the quota (`cap = max(2, quota + 1)`) so the
+ramp is real rather than permanently blocked at two. Nothing is filed while the
+board is full: **a full backlog is a signal to build, not to file more.**
+
+Signals it ranks:
+
+| Signal | Measured how | Trust |
 | --- | --- | --- |
-| **A human asked** | open issues that are not labelled `growth`, `security` or `dependencies` | The only input that cannot be invented. Scored highest. |
-| **Test coverage** | `node --test --experimental-test-coverage`, parsed | The one number that cannot be argued with. Files below 60% with 40+ lines become candidates; files absent from the report entirely are called out as *unloaded*, which is a stronger statement than a low percentage. |
-| **Undocumented configuration** | env vars read by `src/` and absent from `.env.example` and the guides | A switch nobody can find is a feature nobody has. |
-| **CLI drift** | verbs in `usage()` vs `case` labels in `bin/pinch.js` | The help text is a promise. Aliases (`case "start": case "serve":`) are grouped, not double-counted. |
-| **Broken documentation links** | relative links in the markdown files | A 404 at the moment someone is being careful. |
-| **Residual risks** | the register in [`AUDIT.md`](AUDIT.md) | Included so they are visible, scored deliberately low: they were *decided*. Re-proposing a decision daily is how a bot gets muted. |
+| **A human asked** | open issues, not labelled `growth`/`security`/`dependencies` | highest — scored 3, and answered with a spec comment rather than a duplicate |
+| Test coverage | `node --test --experimental-test-coverage`, parsed | measured |
+| Undocumented config | env vars *read* by `src/` and absent from `.env.example` | measured |
+| CLI drift | verbs in `usage()` vs `case` labels | measured |
+| Broken doc links | relative links that do not resolve | measured |
+| Market gaps | the research above | measured, but second-hand: demand 2, not 3 |
+| Residual risks | the register in `AUDIT.md` | deliberately low — these were *decided* |
 
-## The gate — what "when needed" actually means
+Score is `impact × confidence × demand ÷ effort`, floored at 3.
 
-The bot is silent by default. It speaks only when all of these hold:
+---
 
-1. the best candidate scores **at least 3** (`impact × confidence × demand ÷ effort`);
-2. **fewer than 2** growth proposals are already open — a full backlog is a
-   signal to build, not a signal to file more;
-3. the same **fingerprint** has not been proposed in the last **30 days**, in any
-   state. A closed proposal is a "not now", not a "never": after the window it
-   can come back.
+## 3. Fix — the part with a fence around it
 
-At most **one issue per run**, ever. There is no "batch" mode, because a bot
-that files five things a day is a bot you stop reading.
+`scripts/manager.js` closes the mechanical issues itself and opens a pull
+request. Four rules, enforced in code rather than in a prompt:
 
-## Two outcomes that are not "file an issue"
+1. **Paths.** Only `.env.example`, `docs/*.md`, `README.md` and
+   `CONTRIBUTING.md` are editable. `src/` is not on the list — not "should not",
+   *cannot*. There is no flag that widens it, and a test fails if the allowlist
+   ever matches a source file or a traversal.
+2. **Fixers.** A file is edited only by a named fixer matching the issue's
+   fingerprint. No fixer matches → the manager says "this one needs a person"
+   and moves on. It never improvises.
+3. **The suite.** Edits are applied, `node --test` and `node scripts/audit.js`
+   run, and a red build restores the tree byte for byte. The fix is dropped, not
+   debugged unattended.
+4. **One at a time.** One fix per run, and the workflow refuses to start if a
+   bot PR is already open. A human merges; branch protection makes that a fact.
 
-**Annotate.** When the top candidate is a request a human already opened, the
-bot comments a spec on that issue instead of filing a duplicate: where the change
-lands, what it costs, which invariant it could touch, and the test that would
-prove it works. It says plainly that it is speculation, not a promise.
+Currently mechanical: **documenting an undocumented variable** (reading its real
+default from `src/config.js`) and **repairing a broken relative link** (retarget
+to the file that moved, or demote to plain text if nothing plausible exists).
+Everything else stays a proposal, including every market gap — those touch
+paths where "the tests passed" is not the same claim as "a human read it".
 
-**Quiet.** Most days. A silent run is a passing run — the job exits 0 and records
-the ranked table in the run summary so you can see what it *would* have said.
+### Why not let it write features?
 
-## Killing it, or telling it to wait
+This is the honest answer, and it has not changed since the loop was designed
+([`.github/prompts/self-improvement.md`](../.github/prompts/self-improvement.md)):
+
+This repository runs shell commands on someone's laptop. A subtle change to
+`screenCommand()` or `resolveInWorkspace()` does not produce a broken button; it
+produces a machine that can be wiped by a prompt injection. A weekly bot PR is a
+weekly decision you learn to ignore — and unreviewed-but-merged automation is how
+"we have tests" becomes "we have tests we do not read".
+
+So the machine does the looking, the proposing, and the mechanical fixing. The
+judgement stays where the blast radius is.
+
+---
+
+## Turning it down, or off
 
 | Want | Do |
 | --- | --- |
-| Stop it for a while | `touch .github/growth-pause` — the file's contents are printed in the run log as the reason. Delete it to resume. |
-| Stop it permanently | Delete `.github/workflows/growth.yml`. `scripts/growth.js` is still usable by hand. |
-| See what it would do today | `npm run growth` (report, no side effects) |
-| Same, machine readable | `node scripts/growth.js --json` |
-| Use a different bar | `--min 4`, `--max-open 1`, `--window 60` |
-| Reproduce a past run | `--today 2026-10-30` — the date is an input, not an ambient fact |
+| Pause everything | `touch .github/growth-pause` — the file's contents are printed as the reason |
+| Propose only, no fix PRs | Run with the `skip_fix` input |
+| See what it would do | `npm run growth` (report only) |
+| Research only | `node scripts/market.js` |
+| Check a fix without applying | `node scripts/manager.js --issues /tmp/issues.json` |
+| Different bar / quota | `--min 4`, `--quota 2`, `--window 60`, `--merged 6` |
+| Reproduce a past run | `--today 2026-10-30` — the date is an input, not ambient fact |
 
-## Why there is no model in this loop
+Remove `.github/workflows/growth.yml` to stop the schedule entirely; the three
+scripts still work by hand.
 
-This is the part that looks like a missed opportunity, so it is worth stating
-plainly.
+## Making the loop smarter
 
-A model asked *"what feature should we build next?"* with no inputs answers from
-its training data — confidently, and about a year out of date. That is precisely
-the failure Pinch's own honesty guard exists to catch, and committing it in the
-repository that ships the guard would be a bad joke.
+Adding a *signal* is a small, testable change: write a `collectSomething()`
+returning `candidate({...})` objects, give it an exact `fingerprint`, set
+`confidence: 3` only if it is measured from the tree, register it in `main()`,
+and add a test. Two false positives and one silent NaN were caught that way
+before the bot ever filed anything.
 
-The alternative — a model with tools, reading the repo, opening a PR every
-morning — was considered and rejected in
-[`.github/prompts/self-improvement.md`](../.github/prompts/self-improvement.md).
-The short version: this repository runs shell commands on someone's laptop. A
-subtle change to `screenCommand()` or `resolveInWorkspace()` does not produce a
-broken button; it produces a machine that can be wiped by a prompt injection. A
-human reads changes in that path, every time — and a weekly bot PR is a weekly
-decision you learn to ignore.
-
-So the machine gathers facts, and stops. The judgement stays where the blast
-radius is.
-
-## If you want to make the loop smarter
-
-The honest answer is that `scripts/growth.js` is deliberately under-powered.
-Adding a signal is a small, testable change:
-
-1. write a `collectSomething()` that returns `candidate({...})` objects;
-2. give it a stable `fingerprint` — dedupe depends on it being exact;
-3. set `confidence: 3` only if the signal is *measured* from the tree, `2` if it
-   is read from a document, `1` if you are inferring;
-4. add it to the `all` array in `main()`;
-5. add a test in `test/growth.test.js` — every collector currently has one, and
-   two false positives were caught that way before the bot ever filed anything.
-
-A signal you cannot measure does not belong here. Open an issue instead; that is
-the `demand` path, and it is worth more than any heuristic.
+Adding a *fixer* is a different bar: it must be mechanical (one correct edit,
+not a judgement call), it must stay inside the path fence, and it must come with
+a test proving the fix and a test proving the refusal.

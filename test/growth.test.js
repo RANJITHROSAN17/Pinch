@@ -24,6 +24,10 @@ import {
   renderAnnotation,
   slug,
   historyFor,
+  plan,
+  quotaFor,
+  collectMarket,
+  envReadsIn,
   collectCliDrift,
   collectUndocumentedConfig,
   collectDocDrift,
@@ -75,6 +79,118 @@ test("real demand outranks everything the tree can measure", () => {
   const measured = strong({ kind: "tests", impact: 3, confidence: 3, demand: 1, effort: 2 });
   const asked = strong({ kind: "demand", impact: 3, confidence: 3, demand: 3, effort: 3 });
   assert.ok(asked.score > measured.score);
+});
+
+/* ─────────────────────────── progressive quota ─────────────────────────── */
+
+test("the loop starts at one proposal a day and earns more", () => {
+  // "As many as needed, slowly" is a quota that grows with the track record,
+  // not a constant chosen by whoever was writing the YAML.
+  assert.equal(quotaFor(0), 1);
+  assert.equal(quotaFor(1), 1);
+  assert.equal(quotaFor(2), 2);
+  assert.equal(quotaFor(4), 3);
+  assert.equal(quotaFor(100), 5, "the cap is 5, forever");
+});
+
+test("a negative or nonsense track record cannot inflate the quota", () => {
+  assert.equal(quotaFor(-3), 1);
+  assert.equal(quotaFor(Number.NaN), 1);
+});
+
+test("plan() files up to the quota and no further", () => {
+  const cands = ["a", "b", "c", "d"].map((n, i) => strong({ fingerprint: `tests:${n}`, title: `Test ${n}`, impact: 3, effort: 1, confidence: 3, demand: 3 }));
+  const r = plan(cands, [], { quota: 2, maxOpen: 5 });
+  assert.equal(r.decision, "file");
+  assert.equal(r.files.length, 2);
+  assert.ok(r.skipped.some((s) => /quota/.test(s.reason)));
+});
+
+test("plan() never exceeds the open-proposal cap, even with a high quota", () => {
+  const cands = ["a", "b", "c"].map((n) => strong({ fingerprint: `tests:${n}`, title: `Test ${n}`, impact: 3, effort: 1, confidence: 3, demand: 3 }));
+  const open = [
+    { number: 1, state: "open", labels: [{ name: "growth" }], body: "growth:fingerprint:other1" },
+    { number: 2, state: "open", labels: [{ name: "growth" }], body: "growth:fingerprint:other2" },
+  ];
+  const r = plan(cands, open, { quota: 5, maxOpen: 3 });
+  assert.equal(r.files.length, 1, "only one slot left under the cap");
+  assert.ok(r.skipped.some((s) => /cap reached/.test(s.reason)));
+});
+
+test("annotations do not consume the filing quota", () => {
+  // Answering a human is never what makes a backlog noisy.
+  const asked = strong({ kind: "demand", action: "annotate", issue: 7, effort: 1, impact: 4, confidence: 3, demand: 3 });
+  const build = strong({ fingerprint: "tests:zzz", effort: 1, impact: 3, confidence: 3, demand: 3 });
+  const r = plan([asked, build], [], { quota: 1, maxOpen: 5 });
+  assert.equal(r.files.length, 1);
+  assert.equal(r.annotates.length, 1);
+});
+
+test("plan() with nothing above the floor stays quiet", () => {
+  const weak = strong({ impact: 1, confidence: 1, demand: 1, effort: 5 });
+  const r = plan([weak], [], { quota: 3, maxOpen: 5 });
+  assert.equal(r.decision, "skip");
+  assert.equal(r.files.length, 0);
+});
+
+/* ────────────────────────── environment reads ──────────────────────────── */
+
+test("an assignment is not a configuration read", () => {
+  // env.PINCH = "1" marks a child process. Treating it as configuration made
+  // the bot file an issue about a variable called PINCH.
+  assert.deepEqual(envReadsIn('env.PINCH = "1";'), []);
+});
+
+test("partial identifiers are not reported", () => {
+  // Backtracking used to stop the match early: env.PINCH became PINC.
+  assert.deepEqual(envReadsIn("env.PINCH = 1"), []);
+  assert.deepEqual(envReadsIn("const x = env.PINCH_KEY || ''"), ["PINCH_KEY"]);
+});
+
+test("comparison is a read", () => {
+  assert.deepEqual(envReadsIn('if (env.PINCH_AUTO_APPROVE === "1") {}'), ["PINCH_AUTO_APPROVE"]);
+});
+
+test("each variable is reported once however often it is read", () => {
+  const twice = ["env.PINCH_KEY", "env.PINCH_KEY"].join("\n");
+  assert.deepEqual(envReadsIn(twice), ["PINCH_KEY"]);
+});
+
+/* ─────────────────────────── market research ───────────────────────────── */
+
+test("a market report becomes candidates with its sources attached", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pinch-market-"));
+  try {
+    const file = join(dir, "market.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        today: "2026-10-30",
+        sources: [{ repo: "a/a", ok: true }, { repo: "b/b", ok: true }, { repo: "c/c", ok: false }],
+        gaps: [
+          { id: "mcp", name: "MCP support", status: "missing", total: 2, coveredBy: [{ repo: "a/a", keywords: ["mcp"] }, { repo: "b/b", keywords: ["mcp"] }], evidence: [], note: "" },
+          { id: "rag", name: "RAG", status: "partial", total: 2, coveredBy: [{ repo: "a/a", keywords: ["rag"] }], evidence: ["x.js"], note: "shallow" },
+        ],
+      }),
+    );
+    const { candidates, note } = collectMarket(file);
+    assert.equal(candidates.length, 2);
+    assert.match(note, /2 gap/);
+    const mcp = candidates.find((c) => c.fingerprint === "market:mcp");
+    assert.equal(mcp.kind, "market-gap");
+    assert.match(mcp.title, /2 of 2/);
+    assert.ok(mcp.why.includes("a/a"), "sources must be cited in the proposal");
+    assert.equal(mcp.impact, 4, "unanimous coverage lifts impact");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a missing market report is a note, not a crash", () => {
+  const { candidates, note } = collectMarket("/nonexistent/market.json");
+  assert.deepEqual(candidates, []);
+  assert.match(note, /could not read/);
+  assert.deepEqual(collectMarket("").candidates, []);
 });
 
 /* ───────────────────────────── the decision ────────────────────────────── */
