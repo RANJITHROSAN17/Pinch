@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 
 import {
+  stripTags,
+  decodeEntities,
   sniff,
   extensionOf,
   displayName,
@@ -255,6 +257,44 @@ test("an image is passed through as base64 that round-trips", () => {
   assert.equal(out.kind, "image");
   assert.equal(Buffer.from(out.images[0], "base64").length, png.length);
 });
+
+/* ─────────────────── the three things CodeQL caught ─────────────────────── */
+
+test("a crafted PDF cannot make the parser backtrack exponentially", () => {
+  // The original TJ pattern had a negated class that did not exclude the
+  // backslash, so a run of escapes matched either branch and the engine
+  // backtracked exponentially. Measured, because "looks linear" is not a test.
+  const evil = Buffer.from("%PDF-1.4\nstream\n[".concat("\\".repeat(40_000), "\nendstream\n%%EOF"), "latin1");
+  const started = Date.now();
+  extract(evil, "evil.pdf");
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2_000, `took ${elapsed}ms — that is a denial of service at 40k escapes`);
+});
+
+test("nested tags are stripped to a fixed point", () => {
+  // One pass leaves "<script" behind when a tag contains another tag.
+  // A single pass leaves "ipt>alert(1)" — the tag reassembles itself from the
+  // leftover halves. Repeated passes remove it entirely, which is the point.
+  assert.equal(stripTags("<scr<script>ipt>alert(1)</scr" + "ipt>"), "alert(1)");
+  assert.equal(stripTags("plain text"), "plain text");
+  assert.equal(stripTags("<w:p><w:r><w:t>hi</w:t></w:r></w:p>"), "hi");
+});
+
+test("entities are decoded exactly once, never twice", () => {
+  // &amp;lt; means the five characters "&lt;" — not "<".
+  assert.equal(decodeEntities("&amp;lt;"), "&lt;");
+  assert.equal(decodeEntities("&lt;"), "<");
+  assert.equal(decodeEntities("&amp;amp;"), "&amp;");
+  assert.equal(decodeEntities("a &amp;&amp; b"), "a && b");
+});
+
+test("a docx full of markup still yields the words", () => {
+  const docx = makeDocx(["Cost &lt; budget &amp; schedule ok"]);
+  const text = docxText(docx).text;
+  assert.ok(text.includes("Cost < budget & schedule ok"), `got: ${text}`);
+  assert.ok(!text.includes("<w:"), "no markup survives");
+});
+
 
 /* ─────────────────────────────── the queue ─────────────────────────────── */
 

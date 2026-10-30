@@ -180,9 +180,18 @@ export function pdfText(buffer) {
 }
 
 /** `(hello) Tj` and `[(a) -200 (b)] TJ`, with the escapes the spec allows. */
+/** Streams that are not text still get scanned; cap what the regex sees so a
+ *  hostile file cannot make the scan expensive however the pattern behaves. */
+const MAX_SCAN = 2 * 1024 * 1024;
+
 function textOperators(content) {
+  content = content.length > MAX_SCAN ? content.slice(0, MAX_SCAN) : content;
   const out = [];
-  const re = /\((?:[^()\\]|\\.)*\)\s*(?:Tj|')|\[(?:[^\[\]]|\\.)*\]\s*TJ/g;
+  // Both branches of each alternation must be disjoint, and that means the
+  // negated class has to exclude the backslash as well. Without it a run of
+  // "\\\\" can be consumed either way and the engine backtracks exponentially —
+  // a one-line denial of service on a crafted PDF.
+  const re = /\((?:[^()\\]|\\.)*\)\s*(?:Tj|')|\[(?:[^\[\]\\]|\\.)*\]\s*TJ/g;
   let m;
   while ((m = re.exec(content)) !== null) {
     const s = m[0];
@@ -273,18 +282,45 @@ export function unzipEntry(buffer, wanted) {
  * DOCX text. Paragraph and line breaks become newlines, everything else is
  * markup and is dropped — including field codes, which are not prose.
  */
+/**
+ * Strip XML tags to a fixed point.
+ *
+ * A single pass is not enough: `<scr<script>ipt>` loses one tag and leaves
+ * `<script>` behind, which is exactly the shape CodeQL calls incomplete
+ * multi-character sanitisation. Re-applying until nothing changes costs nothing
+ * on real documents and removes the class of bug rather than one instance.
+ */
+export function stripTags(markup) {
+  let out = markup;
+  for (let i = 0; i < 8; i++) {
+    const next = out.replace(/<[^<>]*>/g, "");
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+/**
+ * Decode XML entities in exactly one pass.
+ *
+ * Sequential replaces are the classic double-unescape: `&amp;lt;` becomes
+ * `&lt;` after the &lt; pass, and a second pass over the same string would
+ * turn it into `<`. One regex with a lookup table cannot see its own output,
+ * so `&amp;lt;` stays `&lt;` — which is what the document actually meant.
+ */
+const ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+
+export function decodeEntities(text) {
+  return text.replace(/&(lt|gt|amp|quot|apos);/g, (_, name) => ENTITIES[name]);
+}
+
 export function docxText(buffer) {
   const xml = unzipEntry(buffer, "word/document.xml").toString("utf8");
-  const body = xml
+  const marked = xml
     .replace(/<w:tab[^>]*\/>/g, "\t")
     .replace(/<w:br[^>]*\/>/g, "\n")
-    .replace(/<\/w:p>/g, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+    .replace(/<\/w:p>/g, "\n");
+  const body = decodeEntities(stripTags(marked));
   return { text: body.replace(/\n{3,}/g, "\n\n").trim(), pages: 0 };
 }
 
