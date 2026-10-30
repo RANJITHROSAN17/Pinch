@@ -1,12 +1,17 @@
 # How this repository grows
 
-Pinch improves on a loop that runs every day: **a machine researches and
-proposes, a human decides, the machine fixes what is mechanical.** This page
+Pinch improves on a loop that runs **every hour**: a machine researches and
+proposes, a human decides, the machine fixes what is mechanical. This page
 documents each part, the rate limit that keeps it from becoming noise, and the
 fence that keeps it from becoming dangerous.
 
+Hourly is not the same as "one issue an hour". The loop files only when a
+candidate clears the bar, has not been proposed in 30 days, and the board has
+room for it. Most runs are quiet, and a quiet run is a passing run — the value
+of the hour is that the research is never more than 60 minutes stale.
+
 ```text
-05:41 UTC daily  ──►  .github/workflows/growth.yml
+every hour at :17  ──►  .github/workflows/growth.yml
                        │
     ┌──────────────────┼───────────────────────┐
     │                  │                       │
@@ -27,17 +32,26 @@ the fourth question: *what should be built next?*
 
 ## 1. Research — where "compete with the top assistants" actually comes from
 
-`scripts/market.js` fetches the README of six comparable projects and matches
-their feature lists against [`CAPABILITIES.json`](CAPABILITIES.json):
+`scripts/market.js` fetches the README of **ten** comparable projects and
+matches their feature lists against [`CAPABILITIES.json`](CAPABILITIES.json) —
+24 capabilities, each with an explicit status, policy and evidence:
 
 | Project | Why it is in the comparison set |
 | --- | --- |
 | `open-webui/open-webui` | the most-installed local web UI |
-| `librechat-ai/LibreChat` | closest feature-parity target |
+| `danny-avila/LibreChat` | closest feature-parity target |
 | `Mintplex-Labs/anything-llm` | documents + agents, works offline |
+| `lobehub/lobe-chat` | the most-starred assistant UI |
 | `janhq/jan` | local-first desktop app |
 | `khoj-ai/khoj` | personal assistant with scheduled agents |
 | `openinterpreter/open-interpreter` | the code-execution benchmark |
+| `mudler/LocalAI` | the drop-in OpenAI-compatible runtime |
+| `langgenius/dify` | agent workflows and a plugin market |
+| `FlowiseAI/Flowise` | visual agent builder |
+
+The bar is a **share of the set**, not a count: 40% of ten projects, so growing
+the comparison set cannot silently lower the standard. A fixed absolute
+threshold would have meant something different at six projects than at ten.
 
 The rule that makes this honest: **a competitor claim comes from that
 competitor's own documentation, fetched today, quoted with a URL.** Not from a
@@ -67,7 +81,7 @@ snapshot in `docs/market-snapshot.json` instead of the network.
 `scripts/growth.js` turns measurements and research into proposals. The rate is
 not a constant somebody guessed:
 
-| Merged proposals a human accepted | Proposals allowed per run |
+| Merged proposals a human accepted | Proposals allowed per hour |
 | --- | --- |
 | 0–1 | **1** |
 | 2–3 | 2 |
@@ -79,9 +93,29 @@ A loop that has never had a suggestion accepted does not get to open five at
 once. One with a track record does not have to be told one at a time. A closed
 proposal counts as *no* trust earned — only a merge does.
 
-The open-proposal cap scales with the quota (`cap = max(2, quota + 1)`) so the
-ramp is real rather than permanently blocked at two. Nothing is filed while the
-board is full: **a full backlog is a signal to build, not to file more.**
+The board cap is the real throttle: `max(6, quota + 2)` at hourly cadence. Six
+open proposals is roughly a week of one maintainer's attention; past that the
+loop is producing a queue, not a plan. Nothing is filed while the board is full:
+**a full backlog is a signal to build, not to file more.**
+
+### Attention rotates with the hour
+
+An hourly loop that re-sorts the same nine gaps 24 times a day is not more
+responsive — it is just faster at saying the same thing. So the hour decides
+which class of signal leads:
+
+| UTC hour | Leads with |
+| --- | --- |
+| 00–05 | what people asked for (open issues) |
+| 06–11 | capabilities a human can feel (market-adjacent) |
+| 12–17 | capabilities we do not have at all (market gaps) |
+| 18–23 | what nothing is testing (coverage) |
+
+The rotation promotes a class by **one place, and only within 20% of the
+candidate above it**. Without that guard it becomes a coronation: a score-0.2
+gap would outrank a score-9 measurement every time its hour came round. The
+shard breaks ties; it does not overrule evidence. `--no-shard` turns it off and
+restores straight score order.
 
 Signals it ranks:
 
@@ -144,11 +178,13 @@ judgement stays where the blast radius is.
 | Want | Do |
 | --- | --- |
 | Pause everything | `touch .github/growth-pause` — the file's contents are printed as the reason |
+| Hourly is too often | Change the cron in `.github/workflows/growth.yml` to `17 */6 * * *` |
 | Propose only, no fix PRs | Run with the `skip_fix` input |
 | See what it would do | `npm run growth` (report only) |
 | Research only | `node scripts/market.js` |
 | Check a fix without applying | `node scripts/manager.js --issues /tmp/issues.json` |
-| Different bar / quota | `--min 4`, `--quota 2`, `--window 60`, `--merged 6` |
+| Different bar / quota | `--min 4`, `--quota 2`, `--window 60`, `--merged 6`, `--hourly-cap 3` |
+| See a specific hour's rotation | `--hour 13` (UTC) |
 | Reproduce a past run | `--today 2026-10-30` — the date is an input, not ambient fact |
 
 Remove `.github/workflows/growth.yml` to stop the schedule entirely; the three

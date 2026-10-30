@@ -83,10 +83,27 @@ test("coverage counts sources that document a capability", () => {
   assert.equal(row.total, 3, "a source that failed to load is not counted as evidence of absence");
 });
 
-test("a gap needs a threshold of the market, not one project's opinion", () => {
-  const rows = [{ id: "x", name: "X", status: "missing", policy: "in-scope", coveredBy: [{ repo: "a/a" }], coverage: 1, opportunity: 1 }];
-  assert.equal(gaps(rows).length, 0, "one competitor is not a pattern");
-  assert.equal(gaps(rows, { threshold: 1 }).length, 1);
+test("a gap needs a share of the market, not one project's opinion", () => {
+  const one = [{ id: "x", name: "X", status: "missing", policy: "in-scope", coveredBy: [{ repo: "a/a" }], coverage: 1, total: 10 }];
+  assert.equal(gaps(one).length, 0, "one competitor in ten is not a pattern");
+  assert.equal(gaps(one, { share: 0.1 }).length, 1);
+});
+
+test("the bar is a share, so growing the comparison set cannot lower it", () => {
+  // A fixed absolute threshold silently changed meaning when the set went from
+  // six projects to ten: three of six is half the market, three of ten is a
+  // corner of it. The rule is a proportion for exactly that reason.
+  const make = (covered, total) => [
+    { id: "x", name: "X", status: "missing", policy: "in-scope", coverage: covered, total, coveredBy: Array.from({ length: covered }, (_, i) => ({ repo: `r/${i}` })) },
+  ];
+  assert.equal(gaps(make(3, 6)).length, 1, "3 of 6 is half the market");
+  assert.equal(gaps(make(3, 10)).length, 0, "3 of 10 is not");
+  assert.equal(gaps(make(4, 10)).length, 1, "4 of 10 clears 40%");
+});
+
+test("a source set of zero cannot divide by zero into a gap", () => {
+  const rows = [{ id: "x", name: "X", status: "missing", policy: "in-scope", coverage: 0, total: 0, coveredBy: [] }];
+  assert.equal(gaps(rows).length, 0);
 });
 
 test("an out-of-scope capability is never proposed, however popular", () => {

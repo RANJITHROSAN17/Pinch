@@ -54,11 +54,15 @@ const CACHE = join(ROOT, "docs", "market-snapshot.json");
  */
 const SOURCES = [
   { repo: "open-webui/open-webui", why: "the most-installed local web UI", kind: "local" },
-  { repo: "librechat-ai/LibreChat", why: "closest feature parity target", kind: "local" },
+  { repo: "danny-avila/LibreChat", why: "closest feature-parity target", kind: "local" },
   { repo: "Mintplex-Labs/anything-llm", why: "documents + agents, works offline", kind: "local" },
+  { repo: "lobehub/lobe-chat", why: "the most-starred assistant UI", kind: "local" },
   { repo: "janhq/jan", why: "local-first desktop app", kind: "local" },
   { repo: "khoj-ai/khoj", why: "personal assistant with scheduled agents", kind: "local" },
   { repo: "openinterpreter/open-interpreter", why: "the code-execution benchmark", kind: "local" },
+  { repo: "mudler/LocalAI", why: "the drop-in OpenAI-compatible runtime", kind: "local" },
+  { repo: "langgenius/dify", why: "agent workflows and a plugin market", kind: "platform" },
+  { repo: "FlowiseAI/Flowise", why: "visual agent builder", kind: "platform" },
 ];
 
 /* ──────────────────────────── Pinch's own claim ─────────────────────────── */
@@ -142,7 +146,7 @@ export function compare(caps, sources) {
  * but is a shadow of what everyone else ships, which is usually cheaper to
  * close than a missing one and is where the compound improvements live.
  */
-export function gaps(rows, { threshold = 3 } = {}) {
+export function gaps(rows, { share = 0.4 } = {}) {
   return rows
     .filter((r) => r.status !== "have")
     // The policy gate is the most important line in this file. Without it the
@@ -151,7 +155,10 @@ export function gaps(rows, { threshold = 3 } = {}) {
     // laptop. A gap the product has decided not to close is not a backlog item,
     // and a bot that proposes it is a bot that has not read the brief.
     .filter((r) => r.policy === "in-scope")
-    .filter((r) => r.coverage >= threshold)
+    // A share, not a count: three of six is half the market and worth acting
+    // on; three of ten is one corner of it and is not. A fixed absolute
+    // threshold silently changes meaning every time the comparison set grows.
+    .filter((r) => r.total > 0 && r.coverage / r.total >= share)
     .map((r) => ({
       ...r,
       kind: r.status === "partial" ? "market-adjacent" : "market-gap",

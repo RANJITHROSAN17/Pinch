@@ -50,6 +50,8 @@ const opt = (name, fallback) => {
 const MIN_SCORE = Number(opt("--min", process.env.GROWTH_MIN_SCORE || 3));
 /** How many open growth proposals are allowed to pile up before the bot goes quiet. */
 const MAX_OPEN = Number(opt("--max-open", process.env.GROWTH_MAX_OPEN || 2));
+/** The board cap at hourly cadence, where six open is a week of attention. */
+const HOURLY_MAX_OPEN = Number(opt("--hourly-cap", process.env.GROWTH_HOURLY_CAP || 6));
 /** A fingerprint proposed inside this window is not proposed again. */
 const WINDOW_DAYS = Number(opt("--window", process.env.GROWTH_WINDOW_DAYS || 30));
 /** The label every growth issue carries, and how issues are found again. */
@@ -590,8 +592,8 @@ function decide(cands, existing) {
  * Annotations are not counted against the quota — answering a human who already
  * asked is never the thing that makes a backlog noisy.
  */
-function plan(cands, existing, { quota = 1, maxOpen = MAX_OPEN } = {}) {
-  const ranked = [...cands].sort((a, b) => b.score - a.score || a.fingerprint.localeCompare(b.fingerprint));
+function plan(cands, existing, { quota = 1, maxOpen = MAX_OPEN, shard = null } = {}) {
+  const ranked = shard ? rankForShard(cands, shard) : [...cands].sort((a, b) => b.score - a.score || a.fingerprint.localeCompare(b.fingerprint));
   const open = existing.filter((i) => i.state === "open");
   const openGrowth = open.filter((i) => (i.labels || []).some((l) => (typeof l === "string" ? l : l.name) === LABEL));
   const files = [];
@@ -634,6 +636,55 @@ function plan(cands, existing, { quota = 1, maxOpen = MAX_OPEN } = {}) {
         : skipped[0]?.reason || "nothing cleared the bar";
 
   return { decision, reason, files, annotates, skipped, ranked };
+}
+
+/**
+ * Which class of signal gets first refusal this hour.
+ *
+ * An hourly loop that re-sorts the same nine gaps 24 times a day is not more
+ * responsive, it is just faster at saying the same thing. So the hour of the
+ * day rotates attention: this hour looks first at what a human asked for, next
+ * hour at the market, then at measurement, then at the repository's own health.
+ * Everything is still ranked by score — the shard only breaks ties and decides
+ * which category is allowed to lead, so over a day every source gets its turn
+ * instead of the loudest one winning every hour.
+ */
+const SHARDS = [
+  { at: 0, kind: "demand", label: "what people asked for" },
+  { at: 6, kind: "market-adjacent", label: "capabilities a human can feel" },
+  { at: 12, kind: "market-gap", label: "capabilities we do not have at all" },
+  { at: 18, kind: "tests", label: "what nothing is testing" },
+];
+
+function shardFor(hour) {
+  const h = Number.isFinite(hour) ? ((Math.floor(hour) % 24) + 24) % 24 : 0;
+  const sorted = [...SHARDS].sort((a, b) => a.at - b.at);
+  let chosen = sorted[sorted.length - 1];
+  for (const shard of sorted) if (h >= shard.at) chosen = shard;
+  return { ...chosen, hour: h };
+}
+
+/**
+ * Rank with the shard's class pulled forward one place, not to the top.
+ *
+ * A straight "shard kind first" would let a weak candidate beat a strong one
+ * every hour. Promoting it by one band means the rotation changes the order
+ * often enough to matter and never enough to file something silly.
+ */
+function rankForShard(cands, shard) {
+  const sorted = [...cands].sort((a, b) => b.score - a.score || a.fingerprint.localeCompare(b.fingerprint));
+  const i = sorted.findIndex((c) => c.kind === shard.kind);
+  if (i > 0 && i <= 3) {
+    // Only within 20% of the candidate above it. Without that guard the
+    // rotation becomes a coronation: a score-0.2 gap would outrank a score-9
+    // measurement every time its hour came round, which is worse than no
+    // rotation at all. The shard breaks ties; it does not overrule evidence.
+    const above = sorted[i - 1];
+    if (sorted[i].score >= above.score * 0.8) {
+      [sorted[i - 1], sorted[i]] = [sorted[i], sorted[i - 1]];
+    }
+  }
+  return sorted;
 }
 
 /**
@@ -779,11 +830,15 @@ function main() {
 
   const merged = Number(opt("--merged", process.env.GROWTH_MERGED || 0));
   const quota = Number(opt("--quota", quotaFor(merged)));
-  // The board cap scales with the earned quota, or a trusted loop would be
-  // permanently blocked at two open proposals and the ramp would be theatre.
-  const maxOpen = Math.max(MAX_OPEN, quota + 1);
-  const result = plan([...byKind.values()], existing, { quota, maxOpen });
+  // Hourly cadence: the board cap is the real throttle, not the run. Six open
+  // proposals is roughly a working week of a single maintainer's attention; past
+  // that the loop is producing a queue, not a plan.
+  const maxOpen = Math.max(HOURLY_MAX_OPEN, quota + 2);
+  const hour = Number(opt("--hour", process.env.GROWTH_HOUR || new Date().getUTCHours()));
+  const shard = flag("--no-shard") ? null : shardFor(hour);
+  const result = plan([...byKind.values()], existing, { quota, maxOpen, shard });
   result.maxOpen = maxOpen;
+  result.shard = shard;
   result.quota = quota;
   result.merged = merged;
   result.marketNote = market.note;
@@ -799,6 +854,8 @@ function main() {
           quota,
           maxOpen: result.maxOpen,
           merged,
+          hour: shard ? shard.hour : null,
+          shard: shard ? shard.label : "none",
           market: market.note,
           files: result.files.map((c) => ({
             fingerprint: c.fingerprint,
@@ -825,7 +882,7 @@ function main() {
 
   const headline = { file: "WOULD FILE", annotate: "WOULD COMMENT", skip: "staying quiet" }[result.decision];
   console.log(`\n🦞 growth — ${TODAY}`);
-  console.log(`   quota ${quota} (from ${merged} merged proposal(s)) · market: ${market.note}\n`);
+  console.log(`   quota ${quota} (from ${merged} merged) · cap ${maxOpen} · this hour: ${shard ? shard.label : "no shard"} · market: ${market.note}\n`);
   console.log(`  ${headline}: ${result.reason}\n`);
   for (const c of result.ranked.slice(0, 8)) {
     const mark = result.files.includes(c) ? "→" : result.annotates.includes(c) ? "✎" : " ";
@@ -917,6 +974,9 @@ export {
   quotaFor,
   collectMarket,
   envReadsIn,
+  shardFor,
+  rankForShard,
+  HOURLY_MAX_OPEN,
   COVERAGE_FLOOR,
   MIN_SCORE,
   MAX_OPEN,
