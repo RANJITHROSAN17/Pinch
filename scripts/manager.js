@@ -34,7 +34,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -133,8 +133,12 @@ const brokenLink = {
     if (!file || !target) return null;
     const replacement = bestMatch(target, root);
     const abs = join(root, file);
-    if (!existsSync(abs)) return null;
-    const text = readFileSync(abs, "utf8");
+    let text;
+    try {
+      text = readFileSync(abs, "utf8");
+    } catch {
+      return null;
+    }
     if (!text.includes(target)) return null;
     if (replacement) {
       return {
@@ -276,7 +280,13 @@ function snapshot(paths) {
   const saved = new Map();
   for (const p of paths) {
     const abs = join(ROOT, p);
-    saved.set(p, existsSync(abs) ? readFileSync(abs, "utf8") : null);
+    let content = null;
+    try {
+      content = readFileSync(abs, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    saved.set(p, content);
   }
   return saved;
 }
@@ -296,11 +306,22 @@ function restore(saved) {
   }
 }
 
+/** Read a file, treating "absent" as the empty string. One call, no window
+ *  between the check and the use for anything to change underneath. */
+function readOrEmpty(abs) {
+  try {
+    return readFileSync(abs, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return "";
+    throw err;
+  }
+}
+
 export function applyEdits(plan) {
   const saved = snapshot(plan.edits.map((e) => e.path));
   for (const edit of plan.edits) {
     const abs = join(ROOT, edit.path);
-    let text = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+    let text = readOrEmpty(abs);
     if (edit.find != null) {
       if (!text.includes(edit.find)) {
         restore(saved);
