@@ -322,6 +322,24 @@ function collectCliDrift() {
   return out;
 }
 
+/**
+ * Environment variables *read* by a source file.
+ *
+ * Two bugs live in the naive version of this one line, and both produced a
+ * confident false proposal:
+ *   - `env.PINCH = "1"` is an assignment, not configuration;
+ *   - backtracking let the character class stop early, so `env.PINCH` was
+ *     reported as a variable called `PINC`.
+ * The identifier boundary and the assignment lookahead together fix both.
+ */
+const ENV_READ = /env\.([A-Z][A-Z0-9_]{3,})(?![A-Z0-9_])(?!\s*=(?!=))/g;
+
+function envReadsIn(text) {
+  const out = new Set();
+  for (const m of String(text).matchAll(ENV_READ)) out.add(m[1]);
+  return [...out];
+}
+
 /** Configuration the product reads but no document mentions. An assistant with
  *  a switch nobody can find is an assistant with one less feature. */
 function collectUndocumentedConfig() {
@@ -340,9 +358,9 @@ function collectUndocumentedConfig() {
     } catch {
       continue;
     }
-    for (const m of text.matchAll(/env\.([A-Z][A-Z0-9_]{3,})/g)) {
-      if (!used.has(m[1])) used.set(m[1], new Set());
-      used.get(m[1]).add(rel);
+    for (const name of envReadsIn(text)) {
+      if (!used.has(name)) used.set(name, new Set());
+      used.get(name).add(rel);
     }
   }
 
@@ -464,6 +482,52 @@ function collectResidualRisks() {
   return out;
 }
 
+/**
+ * Competitive gaps, handed in by scripts/market.js.
+ *
+ * The bot does not fetch these itself: market research needs the network, and
+ * this file is deliberately a pure function of the tree so every decision is
+ * reproducible with no signal. The workflow runs the researcher, passes the
+ * result here, and the policy field on each capability decides whether a gap is
+ * proposable at all — "multi-user" is out-of-scope and never becomes one, no
+ * matter how many competitors ship it.
+ */
+function collectMarket(path) {
+  if (!path) return { candidates: [], note: "no market report supplied (offline run)" };
+  let report;
+  try {
+    report = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return { candidates: [], note: `could not read ${path} — market gaps skipped` };
+  }
+  const gaps = Array.isArray(report.gaps) ? report.gaps : [];
+  const sources = (report.sources || []).filter((s) => s.ok !== false).length;
+  const out = gaps.map((g) =>
+    candidate({
+      kind: g.kind || "market-gap",
+      fingerprint: `market:${g.id}`,
+      title: `${g.name} — ${g.coveredBy.length} of ${g.total} comparable assistants document it`,
+      // Market evidence is real demand, but second-hand: a human opening an
+      // issue still outranks it, which is why demand is 2 and not 3. Impact
+      // scales with how unanimous the comparison set is — four of six is a
+      // pattern, six of six is table stakes.
+      impact: g.coveredBy.length / Math.max(1, g.total) >= 0.8 ? 4 : 3,
+      confidence: 3,
+      demand: 2,
+      effort: g.status === "partial" ? 3 : 4,
+      what: `${g.name}. Pinch's inventory currently says **${g.status}**${g.note ? ` — ${g.note}` : ""}. ${g.status === "partial" ? "The capability exists but not to the depth the comparison set ships, which is usually the cheapest kind of improvement available." : "Pinch does not do this at all."}`,
+      why: `Read from each project's own README on ${report.today || TODAY} (${sources} sources): ${g.coveredBy.map((c) => c.repo).join(", ")}. Keywords matched: ${[...new Set(g.coveredBy.flatMap((c) => c.keywords))].slice(0, 8).join(", ")}.`,
+      where: g.evidence && g.evidence.length ? g.evidence : ["docs/CAPABILITIES.json — the inventory entry that has to change with the code"],
+      guard: `An entry in \`docs/CAPABILITIES.json\` flipping from \`${g.status}\` to \`have\`, with evidence a reader can open, plus a test that fails without the behaviour.`,
+      cost: "Anything that makes Pinch look more like a hosted product makes it heavier: more surface, more to explain, more to keep secure. The inventory file exists so that trade is visible before the code is written.",
+      risk: /plugin|mcp|rag|document|image/i.test(g.id)
+        ? "Medium to high. Anything that adds an external input path is a new way to reach the model, and the model can reach the shell. This is the category where review is least optional."
+        : "Low to medium — but check `docs/AUDIT.md` before assuming so.",
+    }),
+  );
+  return { candidates: out, note: out.length ? `${out.length} gap(s) from ${sources} sources` : "no proposable gaps" };
+}
+
 /* ──────────────────────────────── decision ─────────────────────────────── */
 
 /**
@@ -515,6 +579,79 @@ function decide(cands, existing) {
   }
 
   return { decision: "file", reason: `top candidate clears the bar at ${top.score} and is new`, chosen: top, ranked };
+}
+
+/**
+ * The multi-file version of decide(). "As many as needed, slowly" is a quota,
+ * not a flood: the run files up to `quota` new proposals, the caller sets the
+ * quota from the track record, and the open-proposal cap still applies across
+ * everything already on the board.
+ *
+ * Annotations are not counted against the quota — answering a human who already
+ * asked is never the thing that makes a backlog noisy.
+ */
+function plan(cands, existing, { quota = 1, maxOpen = MAX_OPEN } = {}) {
+  const ranked = [...cands].sort((a, b) => b.score - a.score || a.fingerprint.localeCompare(b.fingerprint));
+  const open = existing.filter((i) => i.state === "open");
+  const openGrowth = open.filter((i) => (i.labels || []).some((l) => (typeof l === "string" ? l : l.name) === LABEL));
+  const files = [];
+  const annotates = [];
+  const skipped = [];
+
+  for (const c of ranked) {
+    const history = historyFor(c.fingerprint, existing);
+
+    if (c.action === "annotate") {
+      if (history) skipped.push({ fingerprint: c.fingerprint, reason: "already annotated" });
+      else annotates.push(c);
+      continue;
+    }
+    if (c.score < MIN_SCORE) {
+      skipped.push({ fingerprint: c.fingerprint, reason: `below the floor (${c.score} < ${MIN_SCORE})` });
+      continue;
+    }
+    if (history) {
+      skipped.push({ fingerprint: c.fingerprint, reason: `already filed as #${history.number}` });
+      continue;
+    }
+    if (openGrowth.length + files.length >= maxOpen) {
+      skipped.push({ fingerprint: c.fingerprint, reason: `open-proposal cap reached (${maxOpen})` });
+      continue;
+    }
+    if (files.length >= quota) {
+      skipped.push({ fingerprint: c.fingerprint, reason: `per-run quota reached (${quota})` });
+      continue;
+    }
+    files.push(c);
+  }
+
+  const decision = files.length > 0 ? "file" : annotates.length > 0 ? "annotate" : "skip";
+  const reason =
+    decision === "file"
+      ? `filing ${files.length} proposal(s); quota ${quota}, ${openGrowth.length} already open`
+      : decision === "annotate"
+        ? `${annotates.length} open request(s) from humans get a spec comment`
+        : skipped[0]?.reason || "nothing cleared the bar";
+
+  return { decision, reason, files, annotates, skipped, ranked };
+}
+
+/**
+ * How fast the loop is allowed to go.
+ *
+ * Starts at one proposal per day and earns the right to file more: every two
+ * proposals a human merged, the quota goes up by one, capped at five. A loop
+ * that has never had a suggestion accepted does not get to open five at once,
+ * and one with a track record does not have to be told one at a time.
+ *
+ * Reverts are not modelled separately: a reverted growth PR is an issue that
+ * was closed without a merge, so it never counts as trust earned.
+ */
+function quotaFor(mergedCount) {
+  // Math.max(1, NaN) is NaN, so an unreadable counter would quietly make the
+  // bot file nothing rather than fail visibly. Default to the safe minimum.
+  if (!Number.isFinite(mergedCount)) return 1;
+  return Math.max(1, Math.min(5, 1 + Math.floor(Math.max(0, mergedCount) / 2)));
 }
 
 function historyFor(fingerprint, existing) {
@@ -622,12 +759,14 @@ function effortLabel(effort) {
  *  the test suite can import the decision logic without launching a scan. */
 function main() {
   const existing = loadExisting(opt("--existing", ""));
+  const market = collectMarket(opt("--market", ""));
   const all = [
     ...collectDemand(existing),
     ...collectCliDrift(),
     ...collectUndocumentedConfig(),
     ...collectDocDrift(),
     ...(flag("--no-coverage") ? [] : collectCoverage().candidates),
+    ...market.candidates,
     ...collectResidualRisks(),
   ];
 
@@ -637,7 +776,17 @@ function main() {
   for (const c of all.sort((a, b) => b.score - a.score)) {
     if (!byKind.has(c.kind)) byKind.set(c.kind, c);
   }
-  const result = decide([...byKind.values()], existing);
+
+  const merged = Number(opt("--merged", process.env.GROWTH_MERGED || 0));
+  const quota = Number(opt("--quota", quotaFor(merged)));
+  // The board cap scales with the earned quota, or a trusted loop would be
+  // permanently blocked at two open proposals and the ramp would be theatre.
+  const maxOpen = Math.max(MAX_OPEN, quota + 1);
+  const result = plan([...byKind.values()], existing, { quota, maxOpen });
+  result.maxOpen = maxOpen;
+  result.quota = quota;
+  result.merged = merged;
+  result.marketNote = market.note;
 
   if (flag("--json")) {
     process.stdout.write(
@@ -645,35 +794,52 @@ function main() {
         {
           decision: result.decision,
           reason: result.reason,
-          issue: result.issue || null,
           today: TODAY,
           label: LABEL,
-          fingerprint: result.chosen?.fingerprint || null,
-          score: result.chosen?.score || null,
-          title: result.chosen ? `growth: ${result.chosen.title}` : null,
-          markdown: result.chosen ? (result.decision === "annotate" ? renderAnnotation(result.chosen) : renderProposal(result.chosen, result.ranked)) : null,
+          quota,
+          maxOpen: result.maxOpen,
+          merged,
+          market: market.note,
+          files: result.files.map((c) => ({
+            fingerprint: c.fingerprint,
+            score: c.score,
+            kind: c.kind,
+            title: `growth: ${c.title}`,
+            markdown: renderProposal(c, result.ranked),
+          })),
+          annotates: result.annotates.map((c) => ({
+            fingerprint: c.fingerprint,
+            issue: c.issue,
+            score: c.score,
+            markdown: renderAnnotation(c),
+          })),
+          skipped: result.skipped.slice(0, 12),
           ranked: result.ranked.slice(0, 8).map((c) => ({ score: c.score, kind: c.kind, title: c.title })),
         },
         null,
         2,
       ) + "\n",
     );
-  } else if (flag("--md")) {
-    process.stdout.write((result.chosen ? renderProposal(result.chosen, result.ranked) : `_Nothing to propose on ${TODAY}._\n`) + "\n");
-  } else {
-    console.log(`\n🦞 growth — ${TODAY}\n`);
-    const headline = { file: "WOULD FILE", annotate: "WOULD COMMENT", skip: "staying quiet" }[result.decision];
-    console.log(`  ${headline}: ${result.reason}\n`);
-    for (const c of result.ranked.slice(0, 8)) {
-      const mark = c === result.chosen ? "→" : " ";
-      console.log(`  ${mark} ${String(c.score).padStart(5)}  ${c.kind.padEnd(13)} ${c.title}`);
-    }
-    if (result.chosen) {
-      console.log(result.decision === "annotate" ? "\n── comment ──\n" : "\n── proposal ──\n");
-      console.log(result.decision === "annotate" ? renderAnnotation(result.chosen) : renderProposal(result.chosen, result.ranked));
-    }
-    console.log("");
+    return;
   }
+
+  const headline = { file: "WOULD FILE", annotate: "WOULD COMMENT", skip: "staying quiet" }[result.decision];
+  console.log(`\n🦞 growth — ${TODAY}`);
+  console.log(`   quota ${quota} (from ${merged} merged proposal(s)) · market: ${market.note}\n`);
+  console.log(`  ${headline}: ${result.reason}\n`);
+  for (const c of result.ranked.slice(0, 8)) {
+    const mark = result.files.includes(c) ? "→" : result.annotates.includes(c) ? "✎" : " ";
+    console.log(`  ${mark} ${String(c.score).padStart(5)}  ${c.kind.padEnd(15)} ${c.title}`);
+  }
+  for (const c of result.files) {
+    console.log("\n── proposal ──\n");
+    console.log(renderProposal(c, result.ranked));
+  }
+  for (const c of result.annotates) {
+    console.log("\n── comment ──\n");
+    console.log(renderAnnotation(c));
+  }
+  console.log("");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
@@ -694,7 +860,13 @@ function loadExisting(path) {
 function markdownFiles() {
   const out = ["README.md", "CONTRIBUTING.md", "SECURITY.md"];
   const docs = join(ROOT, "docs");
-  if (existsSync(docs)) for (const f of readdirSync(docs)) if (f.endsWith(".md")) out.push(`docs/${f}`);
+  if (existsSync(docs)) {
+    try {
+      for (const f of readdirSync(docs)) if (f.endsWith(".md")) out.push(`docs/${f}`);
+    } catch {
+      /* docs/ replaced by a file: no doc links to check, and no crash either */
+    }
+  }
   return out.filter((f) => existsSync(join(ROOT, f)));
 }
 
@@ -741,6 +913,10 @@ export {
   findBrokenLinks,
   collectDemand,
   historyFor,
+  plan,
+  quotaFor,
+  collectMarket,
+  envReadsIn,
   COVERAGE_FLOOR,
   MIN_SCORE,
   MAX_OPEN,

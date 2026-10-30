@@ -1,0 +1,297 @@
+{
+  "$comment": "Pinch's capability inventory. Every entry claims evidence \u2014 a file or symbol a reader can open. The market researcher (scripts/market.js) refuses to credit a capability it cannot prove, and refuses to call one missing unless the claim is genuinely absent. Update this file when a capability lands or dies; a stale inventory makes every comparison wrong in the flattering direction.",
+  "updated": "2026-10-30",
+  "capabilities": [
+    {
+      "id": "chat-channels",
+      "name": "Reachable from the chat apps a person already uses",
+      "keywords": [
+        "telegram",
+        "discord",
+        "slack",
+        "whatsapp",
+        "multi-channel",
+        "channels",
+        "messaging"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/channels/telegram.js",
+        "src/channels/discord.js",
+        "src/channels/slack.js",
+        "src/channels/whatsapp.js",
+        "src/channels/ws.js"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "file-upload",
+      "name": "Accepts screenshots, documents and files",
+      "keywords": [
+        "upload",
+        "attach",
+        "document",
+        "pdf",
+        "file input",
+        "drag and drop"
+      ],
+      "status": "partial",
+      "evidence": [
+        "src/server.js: multipart handling for voice notes"
+      ],
+      "note": "Voice notes are handled; arbitrary documents are not turned into context.",
+      "policy": "in-scope"
+    },
+    {
+      "id": "image-understanding",
+      "name": "Understands images with a vision model",
+      "keywords": [
+        "vision",
+        "image understanding",
+        "multimodal",
+        "see images",
+        "photo"
+      ],
+      "status": "missing",
+      "evidence": [
+        "src/brain.js: text-only message shape"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "mcp",
+      "name": "Plugs into MCP servers for third-party tools",
+      "keywords": [
+        "mcp",
+        "model context protocol",
+        "tools protocol",
+        "integrations"
+      ],
+      "status": "missing",
+      "evidence": [
+        "no mcp reference anywhere in src/"
+      ],
+      "note": "The emerging interoperability standard. Its absence is the biggest structural gap against every competitor in this list.",
+      "policy": "in-scope"
+    },
+    {
+      "id": "memory",
+      "name": "Remembers facts between conversations",
+      "keywords": [
+        "memory",
+        "remember",
+        "personalization",
+        "context",
+        "long-term memory"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/tools.js: remember, recall, forget",
+        "src/store.js: memory.json"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "plugin-api",
+      "name": "A documented way to add tools without editing core files",
+      "keywords": [
+        "plugin",
+        "extension",
+        "custom tool",
+        "skill",
+        "function calling",
+        "tools api"
+      ],
+      "status": "partial",
+      "evidence": [
+        "src/tools.js: tools are a fixed list in this file",
+        "docs/GUIDE.md: 'adding a tool' section"
+      ],
+      "note": "Adding a tool means editing src/tools.js. That is fine for one maintainer and a wall for anybody else.",
+      "policy": "in-scope"
+    },
+    {
+      "id": "rag-documents",
+      "name": "Indexes your documents and answers from them",
+      "keywords": [
+        "rag",
+        "retrieval",
+        "vector",
+        "embeddings",
+        "knowledge base",
+        "index documents",
+        "chat with your files"
+      ],
+      "status": "missing",
+      "evidence": [
+        "search_web is network-only; there is no embedding store"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "reminders",
+      "name": "Schedules things and reminds you",
+      "keywords": [
+        "reminder",
+        "schedule",
+        "calendar",
+        "alarm",
+        "appointment",
+        "cron"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/scheduler.js",
+        "src/tools.js: remind, list_reminders, cancel_reminder",
+        "src/timeparse.js"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "scheduled-agents",
+      "name": "An agent that runs a task on a schedule without you",
+      "keywords": [
+        "scheduled task",
+        "automation",
+        "workflow",
+        "agent",
+        "autonomous",
+        "triggers"
+      ],
+      "status": "partial",
+      "evidence": [
+        "src/scheduler.js: reminders fire, but they do not run tools"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "voice",
+      "name": "Talk to it and have it read replies back",
+      "keywords": [
+        "voice",
+        "speech",
+        "transcription",
+        "whisper",
+        "tts",
+        "hands-free",
+        "wake word"
+      ],
+      "status": "partial",
+      "evidence": [
+        "WHISPER_URL in src/server.js",
+        "docs/GUIDE.md: voice needs a whisper server; wake word needs an open tab"
+      ],
+      "note": "Input works with a configured whisper endpoint. Nothing here is offline out of the box.",
+      "policy": "in-scope"
+    },
+    {
+      "id": "web-search",
+      "name": "Looks things up on the web",
+      "keywords": [
+        "web search",
+        "browse",
+        "internet",
+        "look up",
+        "search engine",
+        "real-time information"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/tools.js: search_web"
+      ],
+      "policy": "in-scope"
+    },
+    {
+      "id": "multi-user",
+      "name": "Separate accounts and permissions for several people",
+      "keywords": [
+        "multi-user",
+        "accounts",
+        "teams",
+        "rbac",
+        "permissions",
+        "workspaces"
+      ],
+      "status": "missing",
+      "evidence": [
+        "PINCH_KEY is one shared secret; there is no user table"
+      ],
+      "note": "Deliberately out of scope: one person, one laptop. Not a gap to close, a boundary to keep.",
+      "policy": "out-of-scope"
+    },
+    {
+      "id": "cloud-model-optional",
+      "name": "Optional cloud model when the user configures one",
+      "keywords": [
+        "openai",
+        "anthropic",
+        "gemini",
+        "api key",
+        "remote model",
+        "provider"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/brain.js: openai-compatible provider via OPENAI_API_KEY"
+      ],
+      "policy": "settled"
+    },
+    {
+      "id": "local-model",
+      "name": "Runs a local model with no cloud account",
+      "keywords": [
+        "local model",
+        "offline",
+        "ollama",
+        "llama.cpp",
+        "on-device",
+        "privacy",
+        "self-hosted"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/brain.js: ollama provider is the default",
+        "README.md: local-first promise"
+      ],
+      "note": "The identity of the product. Everything else is optional on top.",
+      "policy": "settled"
+    },
+    {
+      "id": "mobile-app",
+      "name": "A native phone app",
+      "keywords": [
+        "mobile app",
+        "ios",
+        "android",
+        "app store"
+      ],
+      "status": "partial",
+      "evidence": [
+        "public/index.html is installable as a PWA",
+        "scripts/pair.js prints a QR"
+      ],
+      "note": "A PWA that installs from the browser. Cheaper than an app and enough for one person.",
+      "policy": "settled"
+    },
+    {
+      "id": "shell-and-files",
+      "name": "Executes commands and edits files, with approval",
+      "keywords": [
+        "execute code",
+        "terminal",
+        "shell",
+        "run commands",
+        "file editing",
+        "code execution",
+        "sandbox"
+      ],
+      "status": "have",
+      "evidence": [
+        "src/tools.js: shell, read_file, write_file, list_dir, grep",
+        "src/server.js: approval gate"
+      ],
+      "policy": "settled"
+    }
+  ],
+  "$policy": "Every capability carries a policy. 'in-scope' may be proposed. 'settled' has been decided and is only shown so the decision is visible. 'out-of-scope' contradicts the product identity in .github/prompts/self-improvement.md; the researcher reports it and the proposer is forbidden from acting on it."
+}
