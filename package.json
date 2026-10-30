@@ -23,6 +23,7 @@
     "supervise": "node scripts/supervise.js",
     "audit": "node scripts/audit.js",
     "radar": "node scripts/tech-radar.js",
+    "growth": "node scripts/growth.js",
     "verify": "node --test && node scripts/audit.js"
   },
   "optionalDependencies": {

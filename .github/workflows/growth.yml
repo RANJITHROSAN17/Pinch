@@ -1,0 +1,141 @@
+name: Growth loop
+
+# Daily: "is there one thing worth building next, and can we prove it?"
+#
+# This job does not write code and does not call a model. It measures the
+# checkout — coverage, broken links, undocumented switches, CLI drift — reads
+# the open issues, and then either files at most ONE proposal, comments a spec
+# on a request a human already made, or does nothing at all.
+#
+# The design bet, argued in .github/prompts/self-improvement.md, is that
+# looking is the part that rots and judgement is the part worth a human's
+# attention. So the bot looks every day and decides almost never.
+#
+# Silence is the normal outcome. A run that files nothing is a passing run.
+
+on:
+  schedule:
+    - cron: "41 5 * * *" # daily, 05:41 UTC — after the nightly audit, before the radar on Mondays
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report the decision without creating or commenting anything"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: growth-loop
+  cancel-in-progress: false
+
+jobs:
+  grow:
+    name: Decide whether anything is worth proposing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+
+      # One file silences the bot for as long as it exists. Easier to reason
+      # about than a schedule edit, and it leaves a trace in the history of
+      # exactly when somebody asked for quiet.
+      - name: Has the maintainer paused the loop?
+        id: pause
+        run: |
+          if [ -f .github/growth-pause ]; then
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+            echo "Paused by .github/growth-pause:" && cat .github/growth-pause
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect the open backlog
+        if: steps.pause.outputs.paused == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # --state all, not open: dedupe has to see closed proposals too, or a
+          # proposal that was declined yesterday gets filed again tomorrow.
+          gh issue list --state all --limit 300 \
+            --json number,title,state,body,labels,comments,updatedAt,createdAt \
+            > /tmp/issues.json
+          echo "backlog: $(jq 'length' /tmp/issues.json) issue(s), $(jq '[.[] | select(.state=="open")] | length' /tmp/issues.json) open"
+
+      # Coverage is measured by the bot itself, so a test regression that
+      # nobody notices still shows up as a growing gap. --no-coverage exists for
+      # the dry-run path, where a slow job is worse than a slightly worse answer.
+      - name: Decide
+        id: decide
+        if: steps.pause.outputs.paused == 'false'
+        run: |
+          set -euo pipefail
+          node scripts/growth.js --existing /tmp/issues.json --json > /tmp/decision.json
+          DECISION="$(jq -r .decision /tmp/decision.json)"
+          echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+          echo "reason=$(jq -r .reason /tmp/decision.json)" >> "$GITHUB_OUTPUT"
+          jq . /tmp/decision.json
+          {
+            echo "### 🦞 Growth loop — $DECISION"
+            echo
+            echo "**$(jq -r .reason /tmp/decision.json)**"
+            echo
+            if [ "$DECISION" != "skip" ]; then
+              echo "$(jq -r .markdown /tmp/decision.json)"
+            else
+              # No `| head` here: with `set -o pipefail`, head closing the pipe
+              # early turns a long ranked list into a failed job.
+              jq -r '.ranked[0:6][]? | "- \(.score) — \(.title)"' /tmp/decision.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: File the proposal
+        if: steps.decide.outputs.decision == 'file' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The label is what makes the backlog countable, so it must exist
+          # before the first issue does. Failing here would lose the proposal.
+          gh label create growth --description "Proposed by the daily growth loop" --color "c77dff" 2>/dev/null || true
+          TITLE="$(jq -r .title /tmp/decision.json)"
+          jq -r .markdown /tmp/decision.json > /tmp/body.md
+          URL="$(gh issue create --title "$TITLE" --body-file /tmp/body.md --label growth)"
+          echo "filed: $URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Annotate a request a human already made
+        if: steps.decide.outputs.decision == 'annotate' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NUMBER="$(jq -r .issue /tmp/decision.json)"
+          jq -r .markdown /tmp/decision.json > /tmp/comment.md
+          # A locked or deleted issue is not an error worth failing the job for;
+          # the next run will simply pick a different candidate.
+          gh issue comment "$NUMBER" --body-file /tmp/comment.md \
+            || echo "::warning::could not comment on #$NUMBER — it may be locked or gone"
+          echo "annotated: #$NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stay quiet, and say why
+        if: steps.decide.outputs.decision == 'skip'
+        run: |
+          echo "No proposal today."
+          echo "${{ steps.decide.outputs.reason }}"
+
+      - name: Keep the artefact
+        if: always() && steps.pause.outputs.paused == 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: growth-${{ github.run_id }}
+          path: |
+            /tmp/decision.json
+            /tmp/issues.json
+          retention-days: 30

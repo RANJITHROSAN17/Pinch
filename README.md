@@ -149,6 +149,7 @@ Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUD
 | **[Channels](docs/CHANNELS.md)** | Telegram, Discord, Slack, WhatsApp in detail |
 | **[Support policy](docs/SUPPORT.md)** | which Node versions we support, and until when |
 | **[Contributing](CONTRIBUTING.md)** | how to add a tool, and the rules around the guard rails |
+| **[Growth loop](docs/GROWTH.md)** | how the daily bot decides what to propose — and why it never writes code |
 
 ## Honest limits
 

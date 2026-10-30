@@ -43,6 +43,7 @@ ${c.coral("🦞 pinch")} — local, private, yours
   ${c.bold("pinch supervise")}       restart Pinch automatically if it ever crashes
   ${c.bold("pinch audit")}           run the adversarial self-check against this install
   ${c.bold("pinch radar")}           what has drifted: runtime, CI, pinned actions
+  ${c.bold("pinch growth")}          what to build next, measured from this checkout
 
 Everything is configured in .env — no accounts, no cloud, no telemetry.
 `);
@@ -63,6 +64,9 @@ switch (command) {
     break;
   case "audit":
     run("scripts/audit.js", rest);
+    break;
+  case "growth":
+    run("scripts/growth.js", rest);
     break;
   case "radar":
     run("scripts/tech-radar.js", rest);
