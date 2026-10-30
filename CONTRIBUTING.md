@@ -93,6 +93,18 @@ test is the one that matters.
 - Security-relevant changes: explain the threat you are defending against. "It felt safer" is
   not a threat model — `docs/SECURITY.md` sets the tone.
 
+## Where ideas come from
+
+A small program looks at this repository every day and files **at most one**
+proposal — measured coverage, broken documentation links, configuration that
+nobody documented, and the issues people actually open. It never writes code and
+never merges anything. See [docs/GROWTH.md](docs/GROWTH.md) for the rules, and
+`npm run growth` to see what it would say today.
+
+If it files something you disagree with, close it — the fingerprint keeps it
+quiet for a month, and a closed proposal stays closed. If it files something
+that is simply wrong, that is a bug in `scripts/growth.js` and a good issue.
+
 ## Reporting a security issue
 
 Please **do not** open a public issue for an approval-gate bypass, sandbox escape, or anything
