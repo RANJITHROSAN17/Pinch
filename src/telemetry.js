@@ -11,7 +11,7 @@
  * guard flags, error class. Not the message text — a log of everything you ever
  * asked is a second copy of your conversations with none of the protections.
  */
-import { appendFileSync, existsSync, statSync, renameSync, openSync, readSync, closeSync } from "node:fs";
+import { appendFileSync, existsSync, statSync, renameSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.js";
 
@@ -27,28 +27,37 @@ let loaded = false;
 function loadTail() {
   if (loaded) return;
   loaded = true;
+
+  // Open first, then fstat the descriptor. Asking the path how big it is and
+  // then opening it is a check-then-use window: the file can change in between,
+  // and the read offset is then computed from a size that is no longer true.
+  let fd;
   try {
-    if (!existsSync(FILE)) return;
-    const size = statSync(FILE).size;
+    fd = openSync(FILE, "r");
+  } catch {
+    return; // no file yet, which is the normal first run
+  }
+  try {
+    const size = fstatSync(fd).size;
+    if (!size) return;
     const start = Math.max(0, size - 64 * 1024);
-    const fd = openSync(FILE, "r");
-    try {
-      const buf = Buffer.alloc(size - start);
-      readSync(fd, buf, 0, buf.length, start);
-      const lines = buf.toString("utf8").split("\n").filter(Boolean);
-      // The first line is very likely a partial record after a tail read.
-      for (const line of lines.slice(start === 0 ? 0 : 1).slice(-RING)) {
-        try {
-          ring.push(JSON.parse(line));
-        } catch {
-          /* a torn final line from a crash — skip it, it is not a fact */
-        }
+    const buf = Buffer.alloc(size - start);
+    readSync(fd, buf, 0, buf.length, start);
+    const lines = buf.toString("utf8").split("\n").filter(Boolean);
+    // The first line is very likely a partial record after a tail read.
+    for (const line of lines.slice(start === 0 ? 0 : 1).slice(-RING)) {
+      try {
+        ring.push(JSON.parse(line));
+      } catch {
+        /* a torn final line from a crash — skip it, it is not a fact */
       }
-    } finally {
-      closeSync(fd);
     }
   } catch {
     /* telemetry is never worth failing a turn over */
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {}
   }
 }
 

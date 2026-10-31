@@ -443,7 +443,10 @@ export function putAttachment(record, owner = "shared") {
     const oldest = [...pending.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)[0];
     if (oldest) pending.delete(oldest[0]);
   }
-  const id = `att_${now.toString(36)}_${randomBytes(9).toString("base64url")}`;
+  // Hex, not base64url: the base64url alphabet contains "_", which made the id
+  // ambiguous to split and produced a test whose result depended on random
+  // bytes. 18 hex characters is the same 72 bits, and it is greppable.
+  const id = `att_${now.toString(36)}_${randomBytes(9).toString("hex")}`;
   pending.set(id, { ...record, id, owner, createdAt: now });
   return id;
 }

@@ -196,12 +196,23 @@ test("an attachment queued by one owner cannot be taken by another", async () =>
   assert.match(taken[0].text, /secret notes/);
 });
 
-test("an attachment id is unguessable, not a timestamp with a suffix", async () => {
+test("an attachment id carries 72 bits of randomness and does not collide", async () => {
   const { putAttachment, extract, clearAttachments } = await import("../src/attachments.js");
   clearAttachments();
-  const id = putAttachment(extract(Buffer.from("x"), "a.txt"), "s");
-  const tail = id.split("_").pop();
-  assert.ok(tail.length >= 12, `id tail is only ${tail.length} characters: ${tail}`);
+
+  // This test used to `split("_")` and assert on the tail. base64url contains
+  // "_", so whether it passed depended on the random bytes — it failed on Node
+  // 22 and 24 in CI and passed on 26. Same code, different bytes, different
+  // answer: that is a test telling you nothing. Assert the format, and the
+  // property that actually matters.
+  const ids = new Set();
+  for (let i = 0; i < 200; i++) {
+    const id = putAttachment(extract(Buffer.from("x"), "a.txt"), "s");
+    const tail = id.slice(id.lastIndexOf("_") + 1);
+    assert.match(tail, /^[0-9a-f]{18}$/, `id tail is not 18 hex characters: ${tail}`);
+    ids.add(id);
+  }
+  assert.equal(ids.size, 200, "two ids collided");
 });
 
 /* ─────────────────────────── telemetry ─────────────────────────────────── */
