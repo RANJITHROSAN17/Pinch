@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
-import { SKIP_DIRS, BINARY_EXT, walkFiles, readHead } from "./scan.js";
+import { SKIP_DIRS } from "./scan.js";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
