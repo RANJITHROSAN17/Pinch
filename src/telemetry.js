@@ -11,7 +11,7 @@
  * guard flags, error class. Not the message text — a log of everything you ever
  * asked is a second copy of your conversations with none of the protections.
  */
-import { appendFileSync, existsSync, readFileSync, statSync, renameSync, openSync, readSync, closeSync } from "node:fs";
+import { appendFileSync, existsSync, statSync, renameSync, openSync, readSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.js";
 
