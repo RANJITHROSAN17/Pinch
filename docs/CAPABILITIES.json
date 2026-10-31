@@ -202,12 +202,16 @@
         "cite",
         "footnote"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/tools.js: search_web returns text, not attributed results"
+        "src/sources.js: a per-turn registry — only what this turn actually retrieved can be cited",
+        "src/citations.js: citedIds() / validateCitations() — [1], [1,3] and [1-3], checked against the registry",
+        "src/guard.js: 'invented-citation' — a [n] with no source behind it is reported to the user",
+        "test/citations.test.js: 'the guard flags a citation to something this turn never fetched'",
+        "docs/GUIDE.md: the 'Where the answer came from' section"
       ],
-      "note": "The honesty guard checks claims against tool output; it does not show the user a source list."
+      "note": "Validated, not decorative. Every citation is checked against the list of things the turn actually fetched, and a citation that names nothing becomes a visible guard flag rather than a dead link. Sources come from web search, files read, and attachments — not from the model's memory. What this does NOT do: verify that a source supports the sentence it is attached to. That is a semantic judgement, and a code-level check that claims to make it would be lying."
     },
     {
       "id": "file-upload",

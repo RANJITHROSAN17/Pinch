@@ -58,9 +58,11 @@ function overlap(a, b) {
  * @param {Array}  input.memoryFacts    [{text}] from store
  * @param {string} input.userText       what the user said
  * @param {string} [input.toolOutput]   concatenated tool output (evidence)
+ * @param {Array}  [input.sources]      what this turn retrieved (sources.js)
+ * @param {Array}  [input.citedIds]     citation numbers that resolved to a source
  * @returns {{flags: Array<{code: string, message: string}>, clean: boolean}}
  */
-export function auditReply({ reply, trace = [], memoryFacts = [], userText = "", toolOutput = "" }) {
+export function auditReply({ reply, trace = [], memoryFacts = [], userText = "", toolOutput = "", sources = [], citedIds = [] }) {
   const flags = [];
   const said = String(reply || "");
   if (!said.trim()) return { flags, clean: true };
@@ -129,7 +131,29 @@ export function auditReply({ reply, trace = [], memoryFacts = [], userText = "",
     }
   }
 
-  // 5) A denial that the reply quietly glossed over as success.
+  // 5) A citation that names something this turn never retrieved.
+  //
+  // This is the failure mode citations are supposed to remove, so it is the one
+  // place where a footnote makes an answer worse than none: "[3]" reads as
+  // evidence and there is nothing behind it. Checked against the registry of
+  // what was actually fetched, not against the reply's own list.
+  const known = new Set((sources || []).map((s) => s.id));
+  const cited = new Set(citedIds || []);
+  for (const m of said.matchAll(/\[(\d{1,2}(?:\s*[,-]\s*\d{1,2})*)\](?!\()/g)) {
+    for (const part of m[1].split(",")) {
+      const n = Number(part.trim().split("-")[0]);
+      if (Number.isFinite(n) && n > 0 && !known.has(n) && !cited.has(n)) {
+        flags.push({
+          code: "invented-citation",
+          message: `the reply cites [${n}], but this turn retrieved ${known.size || "no"} source${known.size === 1 ? "" : "s"}`,
+        });
+        break;
+      }
+    }
+    if (flags.some((f) => f.code === "invented-citation")) break;
+  }
+
+  // 6) A denial that the reply quietly glossed over as success.
   if (denied.length && !/\b(denied|not allowed|cancell?ed|blocked|didn't|did not|refused)\b/i.test(said)) {
     flags.push({
       code: "denial-not-reported",

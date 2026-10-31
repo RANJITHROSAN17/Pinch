@@ -532,6 +532,7 @@ Honesty is the feature. These are known, accepted, and documented rather than hi
 | Telemetry records timings and counts, not message text | Deliberate: a log of every question is a second copy of your conversations | `data/telemetry.ndjson` is plain text; delete it any time |
 | A scheduled run acts with nobody watching | A timer is not a person; the approval prompt has no reader at 3am | Unattended turns **refuse** every dangerous tool before the approval gate, and cannot create further schedules. See *Scheduled runs: the risk is the missing human* |
 | A schedule reads untrusted text unattended | Reading documents is what makes the feature useful | With every machine-changing tool refused, injected instructions have nothing to reach; `PINCH_SCHEDULED_RUNS=0` is a one-variable kill switch |
+| A citation can name a real source that does not support the sentence | Checking that `[2]` names something the turn fetched is syntactic; checking that source 2 *says* it is a semantic judgement no cheap check makes | The registry stops invented numbers, and the footer lists only what the reply cited, so a reader can open the source and see for themselves. The reply is evidence-backed, not evidence-verified — `docs/GUIDE.md` says this in the user's words |
 
 ---
 

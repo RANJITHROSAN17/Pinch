@@ -12,6 +12,8 @@
 import { config } from "./config.js";
 import { brain } from "./brain.js";
 import { buildSystemPrompt } from "./prompt.js";
+import { createSources, addSource, listSources } from "./sources.js";
+import { validateCitations, renderSourceBlock } from "./citations.js";
 import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError, screenCommand } from "./tools.js";
 import { loadSession, appendMessage, loadMemory } from "./store.js";
 import { auditReply, renderGuardNote } from "./guard.js";
@@ -242,7 +244,12 @@ export async function runAgent({
   let rounds = 0;
   let tokens = 0;
   let toolBudget = TOOL_OUTPUT_BUDGET;
-  const ctx = { channel, target: addressFor(channel, target), sessionId };
+  // What this turn actually retrieved. Only these can be cited; see sources.js.
+  const sources = createSources();
+  for (const a of attachments) {
+    addSource(sources, { kind: "attachment", title: a.name, ref: a.name, snippet: (a.text || "").slice(0, 160) });
+  }
+  const ctx = { channel, target: addressFor(channel, target), sessionId, sources };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     rounds = round + 1;
@@ -373,11 +380,17 @@ export async function runAgent({
   }
 
   // Post-hoc honesty check: does the reply match what actually happened?
+  // Citation validation runs on the model's own words, before the source block
+  // is appended — otherwise the footer's URLs would look like invented links.
+  const citations = validateCitations({ text: finalText, sources: listSources(sources) });
+
   let guard = { flags: [], clean: true };
   if (!config.disableGuard && !/^🦞 My brain is unreachable/.test(finalText)) {
     guard = auditReply({
       reply: finalText,
       trace,
+      sources: listSources(sources),
+      citedIds: citations.cited,
       memoryFacts: loadMemory().facts,
       // A document the user attached IS evidence. Passing only `text` meant a
       // reply that quoted an invoice's sender was flagged as inventing an
@@ -390,6 +403,19 @@ export async function runAgent({
       finalText += renderGuardNote(guard.flags);
       onEvent({ type: "guard", flags: guard.flags });
     }
+  }
+
+  // The footer is evidence, so it appears only when the reply cites something.
+  // An answer from memory must not wear a "Sources" heading: the heading itself
+  // implies research, and a heading with nothing under it is a small lie.
+  const sourceBlock = renderSourceBlock(citations);
+  if (sourceBlock) finalText += sourceBlock;
+
+  if (sources.items.length) {
+    onEvent({
+      type: "sources",
+      items: sources.items.map((s) => ({ ...s, cited: citations.cited.includes(s.id) })),
+    });
   }
 
   appendMessage(sessionId, { role: "assistant", content: finalText, trace, guard: guard.flags });
@@ -409,7 +435,14 @@ export async function runAgent({
     error: /^🦞 My brain is unreachable/.test(finalText) ? "brain-unreachable" : null,
   });
 
-  return { text: finalText, trace, sessionId, guard: guard.flags, ms };
+  return {
+    text: finalText,
+    trace,
+    sessionId,
+    guard: guard.flags,
+    sources: sources.items.map((s) => ({ ...s, cited: citations.cited.includes(s.id) })),
+    ms,
+  };
 }
 
 /* ──────────────────────────── one-shot helper ──────────────────────────── */

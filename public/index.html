@@ -165,6 +165,16 @@
     padding:9px 12px;font-size:.76rem;color:#ffd9a8;max-width:640px;line-height:1.5
   }
   .guard b{color:var(--gold)}
+  /* What the turn actually read. Chips, not a wall of links: the number is the
+     one the reply cites, so the reader can jump from "[2]" to the thing it means. */
+  .sources{
+    margin:6px 0 0 40px;background:#101d2a;border:1px solid #25455e;border-radius:11px;
+    padding:8px 12px;font-size:.74rem;color:#a8cfe8;max-width:640px;line-height:1.6
+  }
+  .sources b{color:#7fb8dd;display:block;margin-bottom:3px;font-size:.72rem;letter-spacing:.02em}
+  .sources .src{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sources .src i{color:#5f87a3;font-style:normal;margin-right:5px}
+  .sources .src.uncited{opacity:.45}
   .wake-pill{
     position:fixed;left:50%;transform:translateX(-50%);bottom:92px;z-index:30;
     background:#2b1518;border:1px solid var(--coral);color:var(--coral);border-radius:999px;
@@ -622,6 +632,7 @@ async function send() {
     let buffer = "";
     let answer = "";
     const guardFlags = [];
+    const turnSources = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -663,6 +674,9 @@ async function send() {
             });
           } else if (data.type === "guard") {
             guardFlags.push(...(data.flags || []));
+          } else if (data.type === "sources") {
+            turnSources.length = 0;
+            turnSources.push(...(data.items || []));
           }
         } else if (event === "final") {
           answer = data.text;
@@ -684,6 +698,21 @@ async function send() {
         `<b>🛡️ Code check</b> — this reply did not match what actually ran:<br>` +
         guardFlags.map((f) => `• ${String(f.message).replace(/</g, "&lt;")}`).join("<br>");
       live.after(note);
+    }
+
+    // Cited sources first; anything fetched and not used is shown dimmed, because
+    // "I read this and did not rely on it" is information the reader wants too.
+    if (turnSources.length && live) {
+      const box = document.createElement("div");
+      box.className = "sources";
+      const cited = turnSources.filter((s) => s.cited).sort((a, b) => a.id - b.id);
+      const rest = turnSources.filter((s) => !s.cited);
+      const line = (s) =>
+        `<span class="src${s.cited ? "" : " uncited"}"><i>[${s.id}]</i>` +
+        `${String(s.title).replace(/</g, "&lt;")}</span>`;
+      box.innerHTML =
+        `<b>Read this turn</b>` + cited.map(line).join("") + rest.map(line).join("");
+      live.after(box);
     }
 
     if (answer) enqueueSpeech(stripGuardNote(answer));

@@ -386,6 +386,9 @@ async function handleApi(req, res, url) {
         text: result.text,
         trace: result.trace,
         guard: result.guard || [],
+        // What the turn actually read, and which of it the reply cited. The panel
+        // renders this; a channel that only carries text gets the footer instead.
+        sources: result.sources || [],
         sessionId,
       });
     } catch (err) {

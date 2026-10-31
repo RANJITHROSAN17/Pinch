@@ -15,6 +15,7 @@ from zero to a running assistant.
 - [Attaching files](#attaching-files)
 - [Reminders that actually fire](#reminders-that-actually-fire)
 - [Tasks that run without you](#tasks-that-run-without-you)
+- [Where the answer came from](#where-the-answer-came-from)
 - [The honesty guard](#the-honesty-guard)
 - [How it works](#how-it-works)
 - [What leaves your machine](#what-leaves-your-machine)
@@ -159,6 +160,41 @@ Schedules live in `data/schedules.json`, a file you can read and delete. Each ru
 `⏱️ **Scheduled · <when>** — <task>` with a footer saying how many tools were refused, and the
 footer stays honest: if delivery to the origin channel fails, it falls back to the local panel
 and says so.
+
+## Where the answer came from
+
+Every other assistant that shows sources shows you links it found. You still cannot tell which sentence
+the third link backs, or whether it was ever opened. Pinch keeps a **list of what this turn actually
+read**, and a citation is checked against it.
+
+```
+You: what does the deploy note say?
+Pinch: It says to deploy on Friday [1].
+
+---
+Sources
+1. notes.txt — `notes.txt`
+```
+
+- The number in `[1]` is the number of the thing the tool returned *this turn*. Search results arrive
+  as `[1] [2] [3]`, files as a single id — whatever the model cites has to be on that list.
+- The footer lists **only what the reply cited**. A source that was fetched and not used is not
+  presented as evidence; it appears dimmed in the panel instead, under "read this turn".
+- **A citation with nothing behind it is a flagged lie, not a link.** If the reply cites `[4]` and only
+  three things were fetched, the guard says so in the check line below the answer. This is the same
+  mechanism that catches "I ran the tests" when no test ran.
+- An answer that read nothing gets **no Sources heading at all**. A heading with nothing under it
+  implies research, and implying research you did not do is the thing this feature exists to stop.
+
+### What this does not promise
+
+The check is that `[2]` names something real. It is **not** a check that source 2 supports the sentence
+it is attached to — that is a semantic judgement, and a cheap code-level check claiming to make it would
+be lying to you. The honest claim: you can always open what the reply cites and see for yourself, and the
+reply cannot invent something to cite. `docs/AUDIT.md` records the residual risk in those words.
+
+Sources are per-turn and in memory. They are not a document library, and nothing is kept after the
+answer — a citation list that outlives the page it came from stops being checkable.
 
 ---
 

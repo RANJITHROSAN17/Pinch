@@ -314,9 +314,16 @@ const mock = {
     const toolResults = messages.filter((m) => m.role === "tool");
     if (toolResults.length) {
       const last = toolResults[toolResults.length - 1];
+      // A tool that registered a source marks its output "(cite as [n])". The
+      // mock cites it, so `npm run demo` and CI exercise the citation path —
+      // registry, validation, footer — on a machine with no model installed.
+      const cite = /\(cite as \[(\d+)\]\)/.exec(String(last.content))?.[1];
+      const attribution = cite
+        ? `\n\nThat is what [${cite}] says, verbatim.`
+        : "";
       return {
         content:
-          `🦞 (mock brain) **${last.name}** returned:\n\n${String(last.content).slice(0, 1200)}\n\n` +
+          `🦞 (mock brain) **${last.name}** returned:\n\n${String(last.content).slice(0, 1200)}${attribution}\n\n` +
           `A real model would now explain this, decide the next step, or write the fix. ` +
           `The tool chain, permissions and memory you just saw are the real thing.`,
         toolCalls: [],

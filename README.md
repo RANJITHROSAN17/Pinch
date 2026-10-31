@@ -63,6 +63,8 @@ npm run demo
   says so instead of pretending.
 - **On your machine, with your model.** Default is Ollama on the same laptop. Your
   conversations are JSON files in `data/` — `rm -rf data` is a valid uninstall.
+- **Answers you can check.** When it reads a file or searches the web, the reply cites what it
+  actually used, and a citation that points at nothing is flagged rather than shown as a link.
 - **With a gate on anything destructive.** Shell commands, file writes, screenshots and
   system actions stop and ask you first. Deny it and it genuinely does not run.
 

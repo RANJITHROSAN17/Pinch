@@ -15,6 +15,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { config } from "./config.js";
+import { addSource } from "./sources.js";
 import {
   remember, loadMemory, forget, loadTasks, saveTask,
   addReminder, pendingReminders, removeReminder,
@@ -596,15 +597,25 @@ export const TOOLS = [
       },
       required: ["path"],
     },
-    async run({ path, start_line, lines }) {
+    async run({ path, start_line, lines }, ctx = {}) {
       const abs = resolveInWorkspace(path);
       const text = await readFile(abs, "utf8");
       const all = text.split("\n");
       const from = Math.max(0, (start_line || 1) - 1);
       const count = lines || 400;
       const slice = all.slice(from, from + count);
-      const header = `${relative(config.workspaceRoots[0], abs) || abs} · lines ${from + 1}-${from + slice.length} of ${all.length}`;
-      return { ok: true, output: `${header}\n\n${slice.join("\n")}` };
+      const shown = relative(config.workspaceRoots[0], abs) || abs;
+      const header = `${shown} · lines ${from + 1}-${from + slice.length} of ${all.length}`;
+      // A claim "your config says X" is checkable only if the reader can see
+      // which file this turn read. Register it; the model cites it as [n].
+      const id = addSource(ctx.sources, {
+        kind: "file",
+        title: shown,
+        ref: shown,
+        snippet: slice.join(" ").slice(0, 160),
+      });
+      const cite = id ? `  (cite as [${id}])` : "";
+      return { ok: true, output: `${header}${cite}\n\n${slice.join("\n")}` };
     },
   },
   {
@@ -801,7 +812,7 @@ export const TOOLS = [
       properties: { query: stringProp("Search query") },
       required: ["query"],
     },
-    async run({ query }) {
+    async run({ query }, ctx = {}) {
       try {
         const res = await fetch(
           `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
@@ -839,9 +850,22 @@ export const TOOLS = [
           const clean = rawUrl.includes("uddg=")
             ? safeDecode(rawUrl.split("uddg=")[1].split("&")[0])
             : rawUrl;
-          results.push(`${results.length + 1}. ${decode(m[2])}\n   ${clean}\n   ${decode(m[3]).slice(0, 220)}`);
+          // The number in the output is the id the model must cite. Registering
+          // happens here, at the moment of retrieval, so a citation later either
+          // names something this turn actually fetched or it is a fabrication.
+          const title = decode(m[2]);
+          const snippet = decode(m[3]).slice(0, 220);
+          const id = addSource(ctx.sources, { kind: "web", title, ref: clean, snippet });
+          const label = id ? `[${id}]` : `${results.length + 1}.`;
+          results.push(`${label} ${title}\n   ${clean}\n   ${snippet}`);
         }
-        return { ok: results.length > 0, output: results.join("\n\n") || "No results (or the network is unavailable)." };
+        if (!results.length) return { ok: false, output: "No results (or the network is unavailable)." };
+        return {
+          ok: true,
+          output:
+            results.join("\n\n") +
+            "\n\nCite what you use as [1], [2] — those numbers are how the reader checks you.",
+        };
       } catch (err) {
         return { ok: false, output: `Web search failed: ${err.message}. I may be offline.` };
       }
