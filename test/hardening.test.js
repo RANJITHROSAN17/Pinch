@@ -357,6 +357,8 @@ test("a symlink cannot walk out of PINCH_WORKSPACE", async (t) => {
       return t.skip("no symlink support on this filesystem");
     }
 
+    // Defends the realpath() containment in resolveInWorkspace(): without it the
+    // lexical check passes and the link walks out of the workspace.
     // A child process, because config.js reads PINCH_WORKSPACE once at import.
     const script = `
       const { resolveInWorkspace } = await import(${JSON.stringify(pathToFileURL(join(ROOT, "src/tools.js")).href)});
