@@ -30,6 +30,13 @@ npm start         # 🦞  http://localhost:7777
 `npm run setup` checks your model, writes `.env`, generates a key, and prints the URL to
 open on your phone. **No account. No cloud. Nothing to configure by hand.**
 
+Something not working? Two read-only checks, safe to run any time:
+
+```bash
+npm run doctor    # reads .env and calls each service: model, Telegram/Discord/Slack tokens, access key
+npm run brain     # asks your model for a short reply and a tool call: speed, and whether it can use tools
+```
+
 | You need | Notes |
 |---|---|
 | Node.js 22 or newer | `node --version` |
