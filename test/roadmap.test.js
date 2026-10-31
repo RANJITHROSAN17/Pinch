@@ -100,3 +100,43 @@ test("backlog entries are exempt from the completeness gate", () => {
     cleanup();
   }
 });
+
+/**
+ * Rule 4 of docs/contributing-queue.md: the bot may close only issues it created, and the
+ * closing comment must name a release. `PINCH_RELEASE` was set nowhere — no workflow, no
+ * .env.example, no script — so the comment always read "Shipped in the next release", a name
+ * no reader can open. These two tests pin the repair: a release comes from the reviewed
+ * manifest, and when it is missing the bot refuses instead of inventing one.
+ */
+
+const WORKFLOW = resolve(".github/workflows/contributor-queue.yml");
+
+test("the closing comment reads its release from the manifest, never from an unset env var", async () => {
+  const { readFileSync } = await import("node:fs");
+  const yml = readFileSync(WORKFLOW, "utf8");
+
+  // Comments may name the old variable - that history is worth keeping. Executable lines may not.
+  const code = yml.split("\n").filter((line) => !line.trim().startsWith("#")).join("\n");
+  assert.doesNotMatch(code, /PINCH_RELEASE/, "PINCH_RELEASE is set nowhere; reading it is how the release name became fiction");
+  assert.doesNotMatch(code, /the next release/, "the fabricated fallback name is back");
+  assert.match(code, /jq -r '\.meta\.latest_release \/\/ empty' \.github\/roadmap\.json/);
+});
+
+test("an unset latest_release makes the bot refuse to close, not guess", async () => {
+  const { readFileSync } = await import("node:fs");
+  const yml = readFileSync(WORKFLOW, "utf8");
+
+  // The guard must sit between the author check and the close, and must skip this issue only.
+  const authorCheck = yml.indexOf("refusing to close #$NUM (author:");
+  const guard = yml.indexOf('if [ -z "$RELEASE" ]');
+  const comment = yml.indexOf('gh issue comment "$NUM"');
+  assert.ok(authorCheck > 0 && guard > authorCheck && comment > guard, "the release guard must run after the author check and before the comment");
+  assert.match(yml.slice(guard, comment), /::warning::not closing #\$NUM/);
+  assert.match(yml.slice(guard, comment), /\bcontinue\b/, "without continue the loop closes an unnamed release anyway");
+});
+
+test("the committed manifest declares latest_release, so the field cannot go missing", async () => {
+  const { readFileSync } = await import("node:fs");
+  const doc = JSON.parse(readFileSync(MANIFEST, "utf8"));
+  assert.ok("latest_release" in doc.meta, "meta.latest_release must exist, empty until a release is cut");
+});

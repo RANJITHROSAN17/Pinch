@@ -224,9 +224,18 @@ jobs:
                 github-actions*|app/github-actions) ;;
                 *) echo "::warning::refusing to close #$NUM (author: $AUTHOR, not the bot)"; continue ;;
               esac
-              RELEASE="${PINCH_RELEASE:-the next release}"
-              gh issue comment "$NUM" --body "Shipped in ${RELEASE}. Thanks for the suggestion — credit is in the release notes."
+              # Rule 4: the closing comment must name the release. ${PINCH_RELEASE} was
+              # set nowhere, so this always said "Shipped in the next release" - a name no
+              # reader can open. Refuse to close rather than invent one: an issue that stays
+              # open is recoverable, a credit line pointing at a release that does not exist
+              # is the exact thing this repository documents against.
+              RELEASE="$(jq -r '.meta.latest_release // empty' .github/roadmap.json)"
+              if [ -z "$RELEASE" ]; then
+                echo "::warning::not closing #$NUM - meta.latest_release is unset, and the closing comment must name a release"
+                continue
+              fi
+              gh issue comment "$NUM" --body "Shipped in ${RELEASE}. Thanks for the suggestion - credit is in the release notes."
               gh issue close "$NUM" --reason completed
-              echo "closed #$NUM (${ID})" >> "$GITHUB_STEP_SUMMARY"
+              echo "closed #$NUM (${ID}, ${RELEASE})" >> "$GITHUB_STEP_SUMMARY"
             done < <(jq -r --arg m "$MARKER" '.[] | select((.body // "") | contains($m)) | .number' /tmp/open2.json)
           done < /tmp/shipped.txt

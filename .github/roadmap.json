@@ -6,12 +6,14 @@
     "reply_sla_hours": 24,
     "open_easy_cap": 3,
     "created_labels": ["good first issue", "help wanted"],
+    "latest_release": "",
     "notes": [
       "status: backlog    -> not eligible to be filed",
       "status: ready      -> eligible; the bot may file it when the cap allows",
       "status: filed      -> the bot created it; the marker lives in the issue body",
       "status: shipped    -> the bot may comment + close its own issue, naming the release",
-      "Only entries with status=ready AND a complete body are ever filed."
+      "Only entries with status=ready AND a complete body are ever filed.",
+      "latest_release   -> the tag the close comment cites; empty means the bot will not close anything it filed"
     ]
   },
   "items": [
