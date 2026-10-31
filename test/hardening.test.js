@@ -23,10 +23,10 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -338,4 +338,52 @@ test("R6: credential stores are refused even when the workspace is home", async 
   // And an ordinary file in the same tree still works.
   const ok = resolveInWorkspace("~/some-project/readme.md");
   assert.ok(ok.startsWith(homedir()));
+});
+
+/* ─────────────── sandbox — a symlink cannot walk out ─────────────── */
+
+test("a symlink cannot walk out of PINCH_WORKSPACE", async (t) => {
+  const base = mkdtempSync(join(tmpdir(), "pinch-symlink-"));
+  try {
+    const workspace = join(base, "workspace");
+    const outside = join(base, "outside-target");
+    mkdirSync(workspace);
+    mkdirSync(outside);
+    writeFileSync(join(outside, "secret.txt"), "not yours");
+    writeFileSync(join(workspace, "ok.txt"), "fine");
+    try {
+      symlinkSync(outside, join(workspace, "escape"), process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return t.skip("no symlink support on this filesystem");
+    }
+
+    // Defends the realpath() containment in resolveInWorkspace(): without it the
+    // lexical check passes and the link walks out of the workspace.
+    // A child process, because config.js reads PINCH_WORKSPACE once at import.
+    const script = `
+      const { resolveInWorkspace } = await import(${JSON.stringify(pathToFileURL(join(ROOT, "src/tools.js")).href)});
+      const out = {};
+      for (const p of ["escape", "escape/secret.txt", "ok.txt"]) {
+        try { out[p] = "allowed:" + resolveInWorkspace(p); } catch (e) { out[p] = "refused:" + e.constructor.name; }
+      }
+      console.log(JSON.stringify(out));
+    `;
+    const stdout = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+        env: { ...process.env, PINCH_WORKSPACE: workspace, PINCH_DATA: base, LLM_PROVIDER: "mock" },
+      });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.on("error", reject);
+      child.on("close", () => resolve(out));
+    });
+    const result = JSON.parse(stdout);
+
+    assert.equal(result["escape"], "refused:SafePathError");
+    assert.equal(result["escape/secret.txt"], "refused:SafePathError");
+    // Control: the guard is not simply refusing everything.
+    assert.match(result["ok.txt"], /^allowed:/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });
