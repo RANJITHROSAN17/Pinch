@@ -31,6 +31,18 @@ npm run verify    # both of the above, the full gate
 You do **not** need a GPU, an API key or any chat tokens to develop most of Pinch. The mock
 brain exercises the full agent loop, streaming, approvals and reminders.
 
+## Your first PR
+
+Your workflows will show **"awaiting approval"** on your first pull request. That is normal:
+GitHub holds CI and Security runs from first-time contributors until a maintainer approves them,
+and Pinch keeps that gate on because CI runs `node scripts/audit.js` and spawns processes — fork
+PRs must never run with a token that can write.
+
+I approve the runs by hand and say so on the PR ("approved, CI is running"). Expect that, and a
+first review, within **24 hours** (`meta.reply_sla_hours` in `.github/roadmap.json`; see
+[the contributor queue](docs/contributing-queue.md)). You do not need to ping, re-push or close and
+reopen the PR to get it moving.
+
 ## Where things live
 
 | Path | What belongs there |
