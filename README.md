@@ -123,11 +123,12 @@ npm run audit     # 14 probes, ~2 seconds, no model, no network — try it on yo
 
 | Guard rail | What it means |
 |---|---|
-| **Approval gate** | Anything destructive stops and shows you the exact command. Default deny. |
-| **Workspace sandbox** | Files are confined to `PINCH_WORKSPACE`, resolved through `realpath()` — a symlink cannot walk out. |
+| **Approval gate** | Anything destructive stops and shows you the exact argument — values included, shell metacharacters called out. Default deny. |
+| **Workspace sandbox** | Files are confined to `PINCH_WORKSPACE`, resolved through `realpath()` — a symlink cannot walk out. `~/.ssh`, `~/.aws`, `~/.gnupg` and friends are refused even when the workspace is your home directory. |
+| **No shell for data** | Tools that take a filename run it as argv, never as a command string. `grep` runs model-supplied patterns on a worker thread it can kill. |
 | **Command screen** | `rm -rf /`, `rm -rf $HOME`, `find / -delete`, `curl \| sh`, fork bombs, power-off — refused with a reason. |
 | **Scrubbed environment** | Commands never inherit your `PINCH_KEY`, `TELEGRAM_TOKEN` or `OPENAI_API_KEY`. |
-| **Host + Origin checks** | A website you visit cannot drive your assistant, and DNS rebinding fails. |
+| **Host + Origin checks** | A website you visit cannot drive your assistant, and DNS rebinding fails. The API key travels in a header, never a cookie, so a stray local dev server cannot read your history. |
 | **Honesty guard** | Every reply is audited in code: "I sent it" with no tool that sends gets flagged, visibly. |
 
 Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUDIT.md).

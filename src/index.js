@@ -71,13 +71,37 @@ async function main() {
   }
 
   // ── http ───────────────────────────────────────────────────────────────
+  // An assistant with a shell, bound to 0.0.0.0 and holding no key, is an open
+  // shell on the LAN — the state a default install used to boot into.
+  //
+  // Refusing to start would break every existing install on upgrade, so the
+  // default case narrows instead: no key and no deliberate host means we bind
+  // loopback only and say exactly how to get the phone back. Someone who typed
+  // PINCH_HOST=0.0.0.0 made a decision; they get a warning, not a veto.
+  const isLoopback = (h) => h === "127.0.0.1" || h === "::1" || h === "localhost";
+  let bindHost = config.host;
+  if (!config.authKey && !isLoopback(config.host)) {
+    if (config.hostExplicit) {
+      console.log("");
+      log.warn(`PINCH_KEY is empty and PINCH_HOST=${config.host} — anyone who can reach this machine can use Pinch.`);
+      log.warn("Set PINCH_KEY, or set PINCH_HOST=127.0.0.1 to close it off.");
+      console.log("");
+    } else {
+      bindHost = "127.0.0.1";
+      console.log("");
+      log.warn("No PINCH_KEY set, so Pinch is listening on localhost only.");
+      log.warn(c.dim("   To reach it from your phone: npm run setup   (it generates a key)"));
+      console.log("");
+    }
+  }
+
   const server = createPinchServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(config.port, config.host, resolve);
+    server.listen(config.port, bindHost, resolve);
   });
 
-  const addrs = lanAddresses();
+  const addrs = isLoopback(bindHost) ? [] : lanAddresses();
   console.log("");
 
   // ── runtime ────────────────────────────────────────────────────────────
@@ -109,7 +133,7 @@ async function main() {
     const suffix = config.authKey ? c.dim("  (needs your key — run `pinch pair` for a QR)") : "";
     console.log(`  ${c.dim("phone/Mac/PC on same Wi-Fi:")} ${c.bold(`http://${addr.address}:${config.port}`)}${suffix}`);
   }
-  if (!config.authKey) {
+  if (!config.authKey && !isLoopback(bindHost)) {
     log.warn("PINCH_KEY is empty — anyone on your network can use Pinch. Run `npm run setup` to set one.");
   }
   console.log("");

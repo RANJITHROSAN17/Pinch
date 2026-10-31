@@ -326,11 +326,19 @@ test("an issue with no timestamps still counts as recent", () => {
 });
 
 test("the window is honoured at its edge", () => {
+  // `today` is passed in. The previous version computed the edge from a
+  // hard-coded TODAY while historyFor() used the real clock, so the assertion
+  // held on the day it was written and failed permanently from the next one.
   const exactly = new Date(Date.parse(TODAY) - WINDOW_DAYS * 86_400_000).toISOString();
   const issues = [{ number: 5, state: "closed", body: "growth:fingerprint:f", updatedAt: exactly }];
-  assert.ok(historyFor("f", issues), "a proposal exactly at the window edge is still inside it");
+  assert.ok(historyFor("f", issues, TODAY), "a proposal exactly at the window edge is still inside it");
   const beyond = new Date(Date.parse(TODAY) - (WINDOW_DAYS + 1) * 86_400_000).toISOString();
-  assert.equal(historyFor("f", [{ ...issues[0], updatedAt: beyond }]), null);
+  assert.equal(historyFor("f", [{ ...issues[0], updatedAt: beyond }], TODAY), null);
+
+  // And it must keep holding a year from now — that is the property the test
+  // was supposed to protect.
+  const later = "2027-10-30";
+  assert.equal(historyFor("f", issues, later), null, "the same issue is outside the window a year later");
 });
 
 /* ─────────────────────────────── rendering ─────────────────────────────── */

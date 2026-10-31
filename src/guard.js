@@ -94,7 +94,10 @@ export function auditReply({ reply, trace = [], memoryFacts = [], userText = "",
   if (inventedEmails.length) {
     flags.push({
       code: "invented-email",
-      message: `${inventedEmails.length === 1 ? "an address appears" : "addresses appear"} that were never given to me: ${inventedEmails.slice(0, 3).join(", ")}`,
+      message:
+        inventedEmails.length === 1
+          ? `an address appears that was never given to me: ${inventedEmails[0]}`
+          : `addresses appear that were never given to me: ${inventedEmails.slice(0, 3).join(", ")}`,
     });
   }
 

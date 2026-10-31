@@ -65,6 +65,10 @@ export const config = Object.freeze({
   timezone: env.OWNER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
 
   host: env.PINCH_HOST || "0.0.0.0",
+  // Was PINCH_HOST actually set? An empty key plus the *default* wildcard bind
+  // is an accident; an explicit 0.0.0.0 is a decision, and the two deserve
+  // different treatment at boot.
+  hostExplicit: Boolean(env.PINCH_HOST),
   port: Number(env.PINCH_PORT || 7777),
   authKey: env.PINCH_KEY || "",
 
