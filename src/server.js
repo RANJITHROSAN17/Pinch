@@ -20,6 +20,7 @@ import {
 } from "./store.js";
 import { registerSender } from "./outbound.js";
 import { stats as turnStats } from "./telemetry.js";
+import { costSummary } from "./cost.js";
 import { ctx as ctxWindow } from "./budget.js";
 
 const MIME = {
@@ -299,6 +300,15 @@ async function handleApi(req, res, url) {
       // p50/p95, error rate and how often the honesty guard raises a flag —
       // the last of those decides whether the guard is worth keeping on.
       turns: turnStats(),
+      // What those turns would have cost, priced locally. Local models report
+      // free; an unlisted model reports unknown rather than inventing a price.
+      cost: (() => {
+        const c = costSummary({ days: 30 });
+        return { days: c.days, low: c.low, high: c.high, unknownTurns: c.unknownTurns, priceTableDate: c.priceTableDate };
+      })(),
+      // How many prompts the risk tiers saved. If this is 0 forever, the tiers
+      // are misconfigured or unused, and the setting should be questioned.
+      autoApprovedTurns: turnStats().autoTotal ?? 0,
       contextWindow: { tokens: ctxWindow.numCtx, reserveForReply: ctxWindow.numPredict },
       uptimeSeconds: Math.round((Date.now() - started) / 1000),
       workspace: config.workspaceRoots,

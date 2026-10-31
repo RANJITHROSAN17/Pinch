@@ -65,8 +65,11 @@ npm run demo
   conversations are JSON files in `data/` — `rm -rf data` is a valid uninstall.
 - **Answers you can check.** When it reads a file or searches the web, the reply cites what it
   actually used, and a citation that points at nothing is flagged rather than shown as a link.
-- **With a gate on anything destructive.** Shell commands, file writes, screenshots and
-  system actions stop and ask you first. Deny it and it genuinely does not run.
+- **With a gate on anything destructive.** Shell commands that could change something, file
+  writes, screenshots and system actions stop and ask you first. Deny it and it genuinely does
+  not run. Turning *down* the noise is deliberate: `ls`, `cat`, `grep`, `git status` and friends
+  run straight through, and a command only earns that by passing a fixed read-only allowlist and
+  keeping every path inside your workspace — so the worst case of a misjudgement is still a prompt.
 
 You message it like a person, and it works like a very fast intern who has your laptop.
 
@@ -171,6 +174,7 @@ Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUD
 - **No GPU?** A 7B model on CPU is 2–4 tokens/sec — usable, not pleasant.
 - **WhatsApp is unofficial** and can get a number banned. Telegram does the same job, officially.
 - **The command screen is a denylist.** Obfuscated commands still reach you for approval; that is the design.
+- **The tier check is a convenience, not a sandbox.** It saves you prompts on `ls` and `git status`; it cannot contain a destructive command that looks read-only, so the deny rules and the approval gate still do the real work.
 - **[More limits in the guide](docs/GUIDE.md#honest-limitations)**, including screenshots, voice notes and wake-word caveats.
 
 ---

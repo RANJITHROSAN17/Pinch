@@ -14,6 +14,7 @@ import { brain } from "./brain.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { createSources, addSource, listSources } from "./sources.js";
 import { validateCitations, renderSourceBlock } from "./citations.js";
+import { classifyCommand, describeTier, READ as TIER_READ, BLOCKED as TIER_BLOCKED } from "./risk.js";
 import { TOOL_MAP, DANGEROUS, toolSchemas, SafePathError, screenCommand } from "./tools.js";
 import { loadSession, appendMessage, loadMemory } from "./store.js";
 import { auditReply, renderGuardNote } from "./guard.js";
@@ -244,6 +245,7 @@ export async function runAgent({
   let rounds = 0;
   let tokens = 0;
   let toolBudget = TOOL_OUTPUT_BUDGET;
+  let autoRan = 0;
   // What this turn actually retrieved. Only these can be cited; see sources.js.
   const sources = createSources();
   for (const a of attachments) {
@@ -325,7 +327,35 @@ export async function runAgent({
         continue;
       }
 
-      if (DANGEROUS.has(tool.name) && !config.autoApprove) {
+      // Risk tiers. A shell command proven read-only, inside the workspace, does
+      // not cost a human's attention — these are things read_file, list_dir and
+      // grep already do unprompted. Everything else asks, exactly as before.
+      // Unattended turns never reach here: they refuse all of DANGEROUS above.
+      let tier = null;
+      if (config.riskTiers && !config.autoApprove && tool.name === "shell" && !unattended) {
+        tier = classifyCommand(call.arguments?.command, {
+          workspaceRoots: config.workspaceRoots,
+          cwd: call.arguments?.cwd,
+        });
+
+        if (tier.tier === TIER_BLOCKED) {
+          messages.push({
+            role: "tool", name: call.name, toolCallId: call.id,
+            content: `Refused: ${tier.why}. This command is not runnable at all, with or without approval.`,
+          });
+          trace.push({ tool: tool.name, args: call.arguments, ok: false, denied: true, reason: "screen", tier: "blocked" });
+          onEvent({ type: "tool_done", name: tool.name, ok: false, preview: `refused: ${tier.why}` });
+          continue;
+        }
+
+        if (tier.tier === TIER_READ) {
+          autoRan += 1;
+          onEvent({ type: "auto", name: tool.name, why: describeTier(tier) });
+        }
+      }
+
+      const mustAsk = DANGEROUS.has(tool.name) && !config.autoApprove && tier?.tier !== TIER_READ;
+      if (mustAsk) {
         const { id, promise } = createApproval({ channel, sessionId, description: label });
         onEvent({ type: "approval", id, description: label });
         const allowed = await promise;
@@ -366,7 +396,13 @@ export async function runAgent({
         : kept;
 
       toolOutputs.push(kept);
-      trace.push({ tool: tool.name, args: call.arguments, ok: result.ok, output: kept.slice(0, 400) });
+      trace.push({
+        tool: tool.name,
+        args: call.arguments,
+        ok: result.ok,
+        output: kept.slice(0, 400),
+        ...(tier?.tier === TIER_READ ? { tier: "read", auto: true } : {}),
+      });
       onEvent({ type: "tool_done", name: tool.name, ok: result.ok, preview: kept.slice(0, 300) });
 
       messages.push({ role: "tool", name: call.name, toolCallId: call.id, content });
@@ -427,10 +463,14 @@ export async function runAgent({
     channel,
     autonomy,
     provider: config.llm.provider,
+    // Which model, not just which vendor: a price table keys on the model, and
+    // "we spent tokens on openai" is not a number anyone can act on.
+    model: config.llm.provider === "ollama" ? config.llm.ollamaModel : config.llm.openaiModel,
     ms,
     rounds,
     tokens,
     tools: trace.length,
+    auto: autoRan,
     guardFlags: guard.flags.length,
     error: /^🦞 My brain is unreachable/.test(finalText) ? "brain-unreachable" : null,
   });

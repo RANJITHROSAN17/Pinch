@@ -13,6 +13,8 @@
  *   pinch supervise    restart-on-crash wrapper (any OS)
  *   pinch audit        run the adversarial self-check against this install
  *   pinch radar        what has drifted: runtime, CI, pinned actions
+ *   pinch export       everything Pinch knows, in one portable JSON file
+ *   pinch cost         token spend for the last 30 days, from telemetry
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -45,6 +47,8 @@ ${c.coral("🦞 pinch")} — local, private, yours
   ${c.bold("pinch audit")}           run the adversarial self-check against this install
   ${c.bold("pinch radar")}           what has drifted: runtime, CI, pinned actions
   ${c.bold("pinch growth")}          what to build next, measured from this checkout
+  ${c.bold("pinch export")}          write everything Pinch knows to one JSON file
+  ${c.bold("pinch cost")}            what the last 30 days of turns would have cost
 
 Everything is configured in .env — no accounts, no cloud, no telemetry.
 `);
@@ -109,6 +113,36 @@ switch (command) {
   case "--version":
     console.log(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
     break;
+  case "export": {
+    const outIdx = rest.indexOf("--out");
+    const out = outIdx >= 0 ? rest[outIdx + 1] : null;
+    const includeTelemetry = rest.includes("--include-telemetry");
+    if (rest.includes("--help")) {
+      console.log(`\n  pinch export [--out FILE] [--include-telemetry]\n
+  Writes sessions, memory, reminders and schedules as one JSON document.
+  Default is stdout, so:  pinch export > backup.json
+  --out FILE           write to a file (mode 0600) instead
+  --include-telemetry  also include the per-turn timing log
+  .env is never included: keys are not part of your data dump.\n`);
+      process.exit(0);
+    }
+    const { writeExport, describeExport } = await import("../src/export.js");
+    const res = writeExport({ path: out, includeTelemetry });
+    if (res.path) {
+      console.error(describeExport(res));
+    } else {
+      process.stdout.write(res.json);
+      console.error(`\n${describeExport(res)}\n`);
+    }
+    process.exit(0);
+  }
+
+  case "cost": {
+    const { costReport } = await import("../src/cost.js");
+    console.log(costReport({ days: Number(rest[0]) || 30, json: rest.includes("--json") }));
+    process.exit(0);
+  }
+
   case "help":
   case "-h":
   case "--help":

@@ -95,6 +95,26 @@
       ]
     },
     {
+      "id": "risk-tiers",
+      "name": "Read-only commands run without a prompt; anything that changes state still asks",
+      "keywords": [
+        "approval fatigue",
+        "auto approve",
+        "permissions",
+        "risk",
+        "allowlist",
+        "guardrails"
+      ],
+      "status": "have",
+      "policy": "in-scope",
+      "evidence": [
+        "src/risk.js: classifyCommand -> read / act / blocked",
+        "src/agent.js: tier checked before the approval gate; blocked refuses without asking",
+        "test/risk.test.js: 10 attack vectors + the agent loop and the PINCH_RISK_TIERS=0 kill switch"
+      ],
+      "note": "Not a denylist and not a permission prompt you click through blind. A command is 'read' only if argv[0] is on a fixed list of readers, no character in it can chain or redirect, and every path argument resolves inside the workspace. git diff/show are excluded because they can execute repo code (textconv). Anything unrecognised falls to 'act', which asks — so the failure mode is a prompt, not a run."
+    },
+    {
       "id": "chat-channels",
       "name": "Reachable from the chat apps a person already uses",
       "keywords": [
@@ -360,12 +380,34 @@
         "import",
         "json export"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "data/ is plain JSON on disk, so a user can copy it — but nothing in the product exports it"
+        "src/export.js: buildExport / writeExport, $schema \"pinch-export/1\"",
+        "bin/pinch.js: pinch export [--out FILE] [--include-telemetry]",
+        "test/export-cost.test.js: 'an export carries every store and never the secrets'"
       ],
-      "note": "The files are readable with cat by design, which is not the same as a supported export."
+      "note": "A single versioned document: profile, memory, reminders, schedules and every session, with counts. Written 0600. .env is never included and telemetry is opt-in, because an export is the one file most likely to be copied to a USB stick or a chat window."
+    },
+    {
+      "id": "cost-accounting",
+      "name": "Tells you what your turns cost, locally priced",
+      "keywords": [
+        "cost",
+        "spend",
+        "token usage",
+        "pricing",
+        "billing",
+        "budget"
+      ],
+      "status": "have",
+      "policy": "in-scope",
+      "evidence": [
+        "src/cost.js: PRICES table dated 2026-11-01, priceFor / costSummary / costReport",
+        "bin/pinch.js: pinch cost [days] [--json]",
+        "test/export-cost.test.js: unknown model reports unknown, never zero"
+      ],
+      "note": "Local model turns report 'free (runs on your hardware)' rather than $0.00, because they are not the same claim. Telemetry records total tokens without an input/output split, so the number is reported as a range rather than pretending to a precision the data does not have."
     },
     {
       "id": "prompt-library",
@@ -455,7 +497,8 @@
       "evidence": [
         "src/telemetry.js: one NDJSON line per turn, rotated at 5 MB",
         "GET /api/health: p50/p95, error rate, guard-flag rate",
-        "test/batch2.test.js: 'a completed turn is recorded, and health reports the numbers'"
+        "test/batch2.test.js: 'a completed turn is recorded, and health reports the numbers'",
+        "src/cost.js + GET /api/health: cost of the last 30 days as a range"
       ],
       "note": "Local only, never transmitted, and it records timings and counts — not message text. No dashboards and no distributed tracing: this is a file you can `tail`, not an observability platform."
     }

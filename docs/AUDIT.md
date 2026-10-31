@@ -375,6 +375,18 @@ designed last line of defence, and it depends on the human reading the command. 
 not pretend otherwise; the panel shows the exact command, with no truncation, and flags
 paths outside the workspace.
 
+**Later change, 2026-11-01 — risk tiers.** Approval fatigue is its own vulnerability: a person
+who approves 60 prompts a day approves the 61st without reading it, which defeats this control
+more reliably than any obfuscation. `src/risk.js` (commit range ending `91873665`) adds a
+classifier that lets a command skip the gate **only** when it is proven read-only: fixed
+allowlist of eight reader programs, no shell metacharacters, every path resolved inside the
+workspace, `cwd` inside it too. Anything unrecognised is `act` and asks as before. `git diff` /
+`git show` are excluded because textconv can execute repository code. Note the direction of the
+trade: this **widens** what runs unattended by exactly the set of commands that cannot write,
+and the fifteen *screen blocks* tests plus ten attack-vector tests in `test/risk.test.js` are
+what keep that set from growing quietly. The screen itself is unchanged and is still not a
+sandbox.
+
 ---
 
 ## 7. Timed-out commands left grandchildren running — Medium

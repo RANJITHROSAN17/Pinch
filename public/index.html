@@ -672,6 +672,14 @@ async function send() {
             addApproval(data.id, data.description, async (allowed) => {
               await fetch("/api/approve", { method: "POST", headers: headers(), body: JSON.stringify({ id: data.id, allowed }) });
             });
+          } else if (data.type === "auto") {
+            // A command that ran without a prompt must never be invisible.
+            const row = document.createElement("div");
+            row.className = "step";
+            row.style.color = "var(--gold)";
+            row.innerHTML = `<span>⚡</span><b>${String(data.name).replace(/</g,"&lt;")}</b><span>ran without asking — ${String(data.why || "").replace(/</g,"&lt;")}</span>`;
+            steps.insertBefore(row, thinking);
+            scrollDown();
           } else if (data.type === "guard") {
             guardFlags.push(...(data.flags || []));
           } else if (data.type === "sources") {

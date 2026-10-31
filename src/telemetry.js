@@ -114,6 +114,10 @@ export function stats() {
     errorRate: Number((errors / turns.length).toFixed(3)),
     guardFlagRate: Number((guards / turns.length).toFixed(3)),
     avgRounds: Number((turns.reduce((n, t) => n + (t.rounds || 0), 0) / turns.length).toFixed(2)),
+    // How many shell commands ran without a prompt because the risk tier proved
+    // them read-only. If this stays 0, the tiers are off or unused; if it equals
+    // total tool calls, something is wrong with the classifier.
+    autoTotal: turns.reduce((n, t) => n + (t.auto || 0), 0),
     avgTokens: Math.round(turns.reduce((n, t) => n + (t.tokens || 0), 0) / turns.length),
   };
 }
