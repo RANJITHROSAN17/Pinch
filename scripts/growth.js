@@ -705,12 +705,12 @@ function quotaFor(mergedCount) {
   return Math.max(1, Math.min(5, 1 + Math.floor(Math.max(0, mergedCount) / 2)));
 }
 
-function historyFor(fingerprint, existing) {
+function historyFor(fingerprint, existing, today = TODAY) {
   for (const issue of existing) {
     const body = String(issue.body || "");
     if (!body.includes(`growth:fingerprint:${fingerprint}`)) continue;
     const stamp = issue.updatedAt || issue.createdAt || "";
-    const ageDays = stamp ? Math.floor((Date.parse(TODAY) - Date.parse(stamp)) / 86_400_000) : 0;
+    const ageDays = stamp ? Math.floor((Date.parse(today) - Date.parse(stamp)) / 86_400_000) : 0;
     if (issue.state === "open" || ageDays <= WINDOW_DAYS) {
       return { number: issue.number, state: issue.state, age: ageDays };
     }

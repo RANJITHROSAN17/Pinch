@@ -38,6 +38,8 @@ export function createApproval({ channel, description }) {
       approvals.delete(id);
       resolve(false);
     }, APPROVAL_TIMEOUT_MS);
+    // A prompt nobody answers must not be the only reason the process is alive.
+    timer.unref?.();
     entry = { resolve, timer, channel, description, createdAt: Date.now() };
     approvals.set(id, entry);
   });
@@ -71,16 +73,35 @@ export function pendingApprovals(channel) {
 
 /* ──────────────────────────────── agent ────────────────────────────────── */
 
-function describeCall(name, args) {
+/**
+ * One line a human can actually judge.
+ *
+ * This used to fall back to `name(key, key, key)` for everything except shell
+ * and write_file — so the prompt for the tool that takes a filename said
+ * "screenshot(path)" and showed the word "path". The human gate is the
+ * load-bearing control here; a gate that withholds the argument is theatre.
+ * Values are shown, truncated, with shell metacharacters called out.
+ */
+export function describeCall(name, args) {
+  const a = args || {};
   if (name === "shell") {
-    const screen = screenCommand(args.command || "");
+    const screen = screenCommand(a.command || "");
     // Surface paths outside the workspace in the prompt itself: the human
     // decision is the real control, so give them the one detail that matters.
     const outside = screen.escapes?.length ? `  ⚠ outside workspace: ${screen.escapes.join(", ")}` : "";
-    return `run: ${args.command}${args.cwd ? `  (in ${args.cwd})` : ""}${outside}`;
+    return `run: ${a.command}${a.cwd ? `  (in ${a.cwd})` : ""}${outside}`;
   }
-  if (name === "write_file") return `write ${args.path} (${Buffer.byteLength(args.content || "", "utf8")} bytes)`;
-  return `${name}(${Object.keys(args || {}).join(", ")})`;
+  if (name === "write_file") return `write ${a.path} (${Buffer.byteLength(a.content || "", "utf8")} bytes)`;
+
+  const shown = Object.entries(a)
+    .map(([key, value]) => {
+      const flat = String(value).replace(/\s+/g, " ");
+      const clipped = flat.length > 120 ? `${flat.slice(0, 120)}…` : flat;
+      const risky = /[$`(){}|;&<>]/.test(flat) ? "  ⚠ shell metacharacters" : "";
+      return `${key}=${clipped}${risky}`;
+    })
+    .join(", ");
+  return `${name}(${shown})`;
 }
 
 /**
@@ -213,7 +234,11 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
       reply: finalText,
       trace,
       memoryFacts: loadMemory().facts,
-      userText: text,
+      // A document the user attached IS evidence. Passing only `text` meant a
+      // reply that quoted an invoice's sender was flagged as inventing an
+      // address — a false positive on correct behaviour, which is how an
+      // honesty check gets switched off and stops catching the real thing.
+      userText: attachmentBlock.text ? `${text}\n${attachmentBlock.text}` : text,
       toolOutput: toolOutputs.join("\n"),
     });
     if (!guard.clean) {

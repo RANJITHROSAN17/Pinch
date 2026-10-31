@@ -150,9 +150,11 @@ const ollama = {
     // Streaming path: emit text as it arrives, collect tool calls at the end.
     const { res, done } = await postStream(url, body);
     let content = "";
+    let finished = false;
     const calls = [];
     try {
       await streamLines(res, (chunk) => {
+        if (chunk.done === true) finished = true;
         const piece = chunk.message?.content;
         if (piece) {
           content += piece;
@@ -171,6 +173,12 @@ const ollama = {
       }, false);
     } finally {
       done();
+    }
+    // Without this, a provider that closes the socket mid-sentence returned
+    // "The answer is 42, and here is" as a complete reply — and it went into
+    // history as fact. The honesty guard audits claims, not completeness.
+    if (!finished && content.trim()) {
+      throw new Error("the model stream ended before it finished — the reply was cut off");
     }
     return { content, toolCalls: calls, provider: "ollama" };
   },
@@ -256,11 +264,13 @@ const openai = {
     // mid-JSON across chunks, so it can only be parsed at the end).
     const { res, done } = await postStream(url, { ...body, stream: true }, headers);
     let content = "";
+    let finishReason = null;
     const partial = new Map();
     try {
       await streamLines(res, (chunk) => {
         const choice = chunk.choices?.[0];
         if (!choice) return;
+        if (choice.finish_reason) finishReason = choice.finish_reason;
         const delta = choice.delta || {};
         if (delta.content) {
           content += delta.content;
@@ -288,6 +298,14 @@ const openai = {
       }))
       .filter((call) => call.name);
 
+    // "length" means the model was cut off by its own output limit; no
+    // finish_reason at all means the connection died. Both used to look
+    // identical to a clean "stop".
+    if (finishReason === "length" && content.trim()) {
+      content += "\n\n_(the model hit its output limit — the reply was cut short)_";
+    } else if (!finishReason && content.trim()) {
+      throw new Error("the model stream ended before it finished — the reply was cut off");
+    }
     return { content, toolCalls, provider: "openai" };
   },
 

@@ -184,18 +184,40 @@ function originAllowed(req, names) {
   return { ok: true };
 }
 
+/**
+ * Is this request allowed in?
+ *
+ * The key may arrive as a header (what the panel sends) or in the query string
+ * (EventSource cannot set headers). It may NOT arrive as a cookie for /api/*,
+ * and that restriction is the whole point:
+ *
+ *   A cookie is ambient authority — the browser attaches it to any request to
+ *   this origin, including one made by a page that is not ours. Because
+ *   hostnameOf() compares hosts and not ports, a page served on
+ *   http://127.0.0.1:9999 counted as an allowed origin and was sent our cookie,
+ *   so any local dev server, notebook or postinstall script could read
+ *   /api/session/* — every conversation — and /api/memory.
+ *
+ * A header is not ambient: a cross-origin page cannot set x-pinch-key without
+ * the value. The cookie survives only to load the static page, which is what
+ * it is for.
+ */
 function authorised(req, url) {
   if (!config.authKey) return true;
   const header = req.headers["x-pinch-key"];
   const query = url.searchParams.get("key");
-  const cookie = /(?:^|;\s*)pinch_key=([^;]+)/.exec(req.headers.cookie || "")?.[1];
-  let decoded = null;
-  try {
-    decoded = cookie ? decodeURIComponent(cookie) : null;
-  } catch {
-    decoded = null; // a mangled cookie is simply not a key
+  if ([header, query].includes(config.authKey)) return true;
+
+  // Static assets may use the cookie, so a browser can navigate to the panel.
+  if (!url.pathname.startsWith("/api/")) {
+    const cookie = /(?:^|;\s*)pinch_key=([^;]+)/.exec(req.headers.cookie || "")?.[1];
+    try {
+      return Boolean(cookie) && decodeURIComponent(cookie) === config.authKey;
+    } catch {
+      return false;
+    }
   }
-  return [header, query, decoded].includes(config.authKey);
+  return false;
 }
 
 function sse(res) {
@@ -323,14 +345,23 @@ async function handleApi(req, res, url) {
     if (!text) return json(res, 400, { error: "text required" });
     const sessionId = String(body.sessionId || "web-main").replace(/[^a-zA-Z0-9._-]/g, "_");
 
-    // Approval replies typed into the panel ("yes" / "no").
-    if (/^(yes|y|allow|ok|approve)$/i.test(text) && pendingApprovals("web").length) {
-      answerApproval(pendingApprovals("web").at(-1).id, true);
-    } else if (/^(no|n|deny|stop|cancel)$/i.test(text) && pendingApprovals("web").length) {
-      answerApproval(pendingApprovals("web").at(-1).id, false);
-    }
-
     const stream = sse(res);
+
+    // Approval replies typed into the panel ("yes" / "no").
+    //
+    // This must RETURN. It used to fall through, so "yes" answered the prompt
+    // *and* started a second agent turn with the word "yes" as the question —
+    // two runs interleaving on one session file, the second reply landing above
+    // the first. The chat channels never had this bug because router.js returns.
+    if (pendingApprovals("web").length) {
+      const yes = /^(yes|y|allow|ok|approve)$/i.test(text);
+      const no = /^(no|n|deny|stop|cancel)$/i.test(text);
+      if (yes || no) {
+        answerApproval(pendingApprovals("web").at(-1).id, yes);
+        stream.send("final", { text: yes ? "🦞 Allowed. On it." : "🦞 Denied — I'll leave that alone.", trace: [], sessionId });
+        return stream.close();
+      }
+    }
     try {
       const attachments = takeAttachments(body.attachments);
       const result = await runAgent({
@@ -454,9 +485,22 @@ async function respond(req, res) {
     const names = allowedHostnames();
     const origin = originAllowed(req, names);
 
-    // Reflect only an origin we trust; never echo an arbitrary one.
-    if (origin.ok && req.headers.origin) res.setHeader("access-control-allow-origin", req.headers.origin);
-    else if (origin.ok) res.setHeader("access-control-allow-origin", "*");
+    // Reflect an Origin only when it is *this* server's own origin — same host
+    // AND same port. Matching on hostname alone let any page on any loopback
+    // port read our responses; a same-origin request needs no CORS headers at
+    // all, so this is strictly narrower and nothing legitimate loses access.
+    const selfHost = hostnameOf(req.headers.host);
+    const selfPort = (req.headers.host || "").split(":")[1] || (config.port ? String(config.port) : "");
+    if (origin.ok && req.headers.origin) {
+      let sameOrigin = false;
+      try {
+        const o = new URL(req.headers.origin);
+        sameOrigin = o.hostname.toLowerCase() === selfHost && (o.port || "80") === String(selfPort || "");
+      } catch {
+        sameOrigin = false;
+      }
+      if (sameOrigin) res.setHeader("access-control-allow-origin", req.headers.origin);
+    }
     res.setHeader("vary", "origin");
     res.setHeader("access-control-allow-headers", "content-type, x-pinch-key");
     res.setHeader("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
@@ -483,7 +527,10 @@ async function respond(req, res) {
 
     // Set the cookie on a successful keyed visit so the panel stops needing ?key=.
     if (config.authKey && url.searchParams.get("key") === config.authKey) {
-      res.setHeader("set-cookie", `pinch_key=${encodeURIComponent(config.authKey)}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      // HttpOnly so a script on our own page cannot read it either (the panel
+      // keeps the key from ?key= in localStorage and sends the header).
+      // Strict so no cross-site request carries it, even on navigation.
+      res.setHeader("set-cookie", `pinch_key=${encodeURIComponent(config.authKey)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict`);
     }
 
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);

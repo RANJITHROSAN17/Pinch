@@ -17,7 +17,23 @@ const LATE_GRACE_MS = 60_000;
 let timer = null;
 let log = console;
 
+let inFlight = false;
+
 export async function tick(now = new Date()) {
+  // setInterval does not wait for the previous tick. A channel that takes
+  // longer than 15 s to accept a message (a Telegram retry, a WhatsApp
+  // reconnect) used to let the next tick see the same reminder still pending —
+  // and deliver it again, because `fired` is only written after the send.
+  if (inFlight) return 0;
+  inFlight = true;
+  try {
+    return await deliverDue(now);
+  } finally {
+    inFlight = false;
+  }
+}
+
+async function deliverDue(now) {
   const due = pendingReminders().filter((r) => new Date(r.at).getTime() <= now.getTime());
   for (const reminder of due) {
     const lateBy = now.getTime() - new Date(reminder.at).getTime();
@@ -49,7 +65,9 @@ export function startScheduler(logger = console) {
   timer.unref?.();
   // Catch up immediately: a reminder that came due while Pinch was off.
   tick().catch(() => {});
-  const next = pendingReminders()[0];
+  // Soonest first — pendingReminders() is insertion order, so [0] was
+  // whichever reminder was created first, not whichever fires first.
+  const next = pendingReminders().sort((a, b) => String(a.at).localeCompare(String(b.at)))[0];
   if (next) log.info?.(`scheduler: ${pendingReminders().length} reminder(s), next at ${formatClock(new Date(next.at), config.timezone)}`);
   return {
     stop: () => {
