@@ -35,8 +35,9 @@ brain exercises the full agent loop, streaming, approvals and reminders.
 
 Your workflows will show **"awaiting approval"** on your first pull request. That is normal:
 GitHub holds CI and Security runs from first-time contributors until a maintainer approves them,
-and Pinch keeps that gate on because CI runs `node scripts/audit.js` and spawns processes — fork
-PRs must never run with a token that can write.
+and Pinch keeps that gate on because the suite spawns processes and boots a real server — `npm test`
+shells out to `scripts/audit.js` through `test/selfcheck.test.js`, and `test/hardening.test.js`
+starts a child process. Fork PRs must never run that with a token that can write.
 
 I approve the runs by hand and say so on the PR ("approved, CI is running"). Expect that, and a
 first review, within **24 hours** (`meta.reply_sla_hours` in `.github/roadmap.json`; see
