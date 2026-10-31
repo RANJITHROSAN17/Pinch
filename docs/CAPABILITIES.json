@@ -1,7 +1,7 @@
 {
-  "$comment": "Pinch's capability inventory. Every entry claims evidence \u2014 a file or symbol a reader can open. scripts/market.js refuses to credit a capability it cannot prove, and refuses to propose one marked out-of-scope however unanimous the market is. Update this file when a capability lands or dies; a stale inventory makes every comparison wrong in the flattering direction.",
+  "$comment": "Pinch's capability inventory. Every entry claims evidence — a file or symbol a reader can open. scripts/market.js refuses to credit a capability it cannot prove, and refuses to propose one marked out-of-scope however unanimous the market is. Update this file when a capability lands or dies; a stale inventory makes every comparison wrong in the flattering direction.",
   "$policy": "in-scope may be proposed. settled has been decided and is only shown so the decision stays visible. out-of-scope contradicts the product identity in .github/prompts/self-improvement.md; the researcher reports it and the proposer is forbidden from acting on it.",
-  "updated": "2026-10-30",
+  "updated": "2026-11-01",
   "capabilities": [
     {
       "id": "local-model",
@@ -229,7 +229,7 @@
         "public/index.html: attach button, drag-and-drop, clipboard paste",
         "test/attachment-http.test.js: proves the text reaches the model"
       ],
-      "note": "Text, PDF, DOCX and images. No OCR for scanned PDFs, no .doc/.xls, nothing written to disk \u2014 attachments live in memory for one message."
+      "note": "Text, PDF, DOCX and images. No OCR for scanned PDFs, no .doc/.xls, nothing written to disk — attachments live in memory for one message."
     },
     {
       "id": "image-understanding",
@@ -279,8 +279,8 @@
       "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/mcp.js: JSON-RPC over stdio, initialize \u2192 tools/list \u2192 tools/call",
-        "src/tools.js: registerTool() \u2014 dynamic registry, refuses to shadow a built-in",
+        "src/mcp.js: JSON-RPC over stdio, initialize → tools/list → tools/call",
+        "src/tools.js: registerTool() — dynamic registry, refuses to shadow a built-in",
         "test/mcp.test.js: 'a third-party tool is offered to the model over HTTP'",
         "docs/GUIDE.md: the PINCH_MCP section"
       ],
@@ -318,11 +318,16 @@
         "triggers",
         "agents"
       ],
-      "status": "partial",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/scheduler.js: reminders fire, but they do not run tools"
-      ]
+        "src/schedules.js: parseCadence() accepts `every 30m`, `daily at 09:00`, `weekly on mon at 8:00` — nothing else parses",
+        "src/scheduler.js: runSchedules() — a due schedule is a full agent turn, delivered back to the chat that created it",
+        "src/agent.js: runAgent({autonomy:'unattended'}) refuses every dangerous tool before the approval gate",
+        "test/schedules.test.js: 'an unattended turn refuses a dangerous tool and leaves no approval pending'",
+        "docs/GUIDE.md: the 'Tasks that run without you' section"
+      ],
+      "note": "No catch-up: a schedule missed while the machine was asleep runs once, late, not N times. Interval cadences are measured from the last run, daily/weekly resolve in the owner's timezone, minimum interval 5 minutes, at most 20 schedules. An unattended turn can never approve anything — dangerous tools are refused and the refusal is in the transcript — and it cannot create further schedules, so a loop cannot spawn loops. PINCH_SCHEDULED_RUNS=0 stops all of it."
     },
     {
       "id": "conversation-search",
@@ -354,7 +359,7 @@
       "status": "missing",
       "policy": "in-scope",
       "evidence": [
-        "data/ is plain JSON on disk, so a user can copy it \u2014 but nothing in the product exports it"
+        "data/ is plain JSON on disk, so a user can copy it — but nothing in the product exports it"
       ],
       "note": "The files are readable with cat by design, which is not the same as a supported export."
     },
@@ -448,7 +453,7 @@
         "GET /api/health: p50/p95, error rate, guard-flag rate",
         "test/batch2.test.js: 'a completed turn is recorded, and health reports the numbers'"
       ],
-      "note": "Local only, never transmitted, and it records timings and counts \u2014 not message text. No dashboards and no distributed tracing: this is a file you can `tail`, not an observability platform."
+      "note": "Local only, never transmitted, and it records timings and counts — not message text. No dashboards and no distributed tracing: this is a file you can `tail`, not an observability platform."
     }
   ]
 }

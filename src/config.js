@@ -97,6 +97,9 @@ export const config = Object.freeze({
   // prompt, the tool schemas and one attachment at the same time.
   // MCP servers: "name=command args;name2=command args". Trusted servers skip
   // the per-call approval prompt; everything else asks, every time.
+  // Scheduled agent runs. Off means the scheduler still delivers reminders; it
+  // simply refuses to start an agent turn with nobody watching.
+  scheduledRuns: !/^(0|false|off|no)$/i.test(env.PINCH_SCHEDULED_RUNS || ""),
   mcpSpec: env.PINCH_MCP || "",
   mcpTrusted: env.PINCH_MCP_TRUSTED || "",
   numCtx: Number(env.PINCH_NUM_CTX || 8192),

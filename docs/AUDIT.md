@@ -530,6 +530,8 @@ Honesty is the feature. These are known, accepted, and documented rather than hi
 | An MCP server is spawned with a scrubbed environment | Third-party code should not see your keys | `PINCH_ENV_PASSTHROUGH` re-adds a specific name if a server genuinely needs one |
 | An approval prompt can still be answered by anyone who can reach the panel | Single-user product; the key gates the panel | Keep `PINCH_KEY` set on anything but loopback |
 | Telemetry records timings and counts, not message text | Deliberate: a log of every question is a second copy of your conversations | `data/telemetry.ndjson` is plain text; delete it any time |
+| A scheduled run acts with nobody watching | A timer is not a person; the approval prompt has no reader at 3am | Unattended turns **refuse** every dangerous tool before the approval gate, and cannot create further schedules. See *Scheduled runs: the risk is the missing human* |
+| A schedule reads untrusted text unattended | Reading documents is what makes the feature useful | With every machine-changing tool refused, injected instructions have nothing to reach; `PINCH_SCHEDULED_RUNS=0` is a one-variable kill switch |
 
 ---
 
@@ -701,6 +703,43 @@ new attack surface, added deliberately, so here is what holds it:
 What this does **not** do: sandbox the server process (it runs as you), support
 the HTTP transport, or defend against a server that behaves until it is trusted
 and then does something else. Read the code of anything you trust.
+
+---
+
+## Scheduled runs: the risk is the missing human
+
+Issue #18 asked for "an agent that runs a task on a schedule without you", and warned to read
+this file before calling the risk low. It was right to. Everything above assumes a person is
+watching the approval prompt. Remove that person and the whole control story changes: a prompt
+nobody can answer is not a gate, it is a stall or — much worse — an auto-approve waiting to be
+written by someone in a hurry.
+
+So the design question was not *how do we run tools at 3am*. It was *what is the most a
+scheduled run should be allowed to do with nobody present*. The answer taken here:
+
+- An unattended turn is a **normal turn with a stricter policy**, not a bypass of the gate.
+  `runAgent({ autonomy: "unattended" })` refuses every dangerous tool **before** the approval
+  branch is reached, so no approval is created, none is left pending, and nothing can answer it
+  later. The model sees the refusal as a tool result and is told to do the part it can.
+- A scheduled run **cannot create a schedule** (`allowSchedule: false`). Otherwise one approved
+  task becomes an unbounded number of tasks — a fork bomb with a natural-language interface.
+- Telemetry now records `autonomy` on each turn, so a turn with no human present is
+  distinguishable after the fact in `data/telemetry.ndjson`.
+
+| Risk | Why it remains | Mitigation |
+|---|---|---|
+| A scheduled run reads whatever the model asks it to read | Reading is not gated, by design — that is what makes the feature useful | It cannot write, execute, screenshot or control the desktop; the transcript shows every tool call; `PINCH_WORKSPACE` still confines paths |
+| Prompt injection lands in a document a schedule reads unattended | Unattended reading of untrusted text is the feature | The injected instructions have nothing dangerous to reach: every machine-changing tool is refused, and a schedule cannot create schedules |
+| A schedule fires during an incident and makes it noisier | Timers do not know about incidents | `PINCH_SCHEDULED_RUNS=0` stops all scheduled runs immediately (reminders keep working); `schedule { action: "remove" }` or deleting `data/schedules.json` also works |
+| Twenty schedules × N rounds each is real local compute | No per-schedule cost cap beyond the context budget | `MAX_SCHEDULES = 20`, a **5-minute floor** on intervals, and one run per slot — never a catch-up burst after the machine wakes |
+| A cadence the user cannot predict | Cron syntax is a support burden disguised as a feature | Only three shapes parse: `every N m/h/d`, `daily at H[:MM]`, `weekly on <dow> at H[:MM]`; anything else is rejected with the accepted list |
+| A run duplicated across a clock change or a restart | Same class of bug as finding #16 | `nextRun` is always strictly after *now*; daily/weekly resolve in the owner's timezone via `Intl`; `markRun` is written **after** delivery succeeds, inside the same `inFlight` guard as reminders |
+
+What is **not** claimed: no sandboxing of the scheduled turn beyond the path confinement that
+already exists, no separate privilege level, no audit of what a schedule read beyond what
+telemetry records (counts, not content), and no protection against a model that *chooses* to burn
+its context re-reading the same file every five minutes. `test/schedules.test.js` proves the
+refusal behaviour; it does not prove the absence of every unattended hazard.
 
 ---
 

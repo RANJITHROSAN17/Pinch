@@ -14,6 +14,7 @@ from zero to a running assistant.
 - [Voice, on your phone](#voice-on-your-phone)
 - [Attaching files](#attaching-files)
 - [Reminders that actually fire](#reminders-that-actually-fire)
+- [Tasks that run without you](#tasks-that-run-without-you)
 - [The honesty guard](#the-honesty-guard)
 - [How it works](#how-it-works)
 - [What leaves your machine](#what-leaves-your-machine)
@@ -96,6 +97,69 @@ reminder arrives on Telegram, at 3am, when the panel is closed.
 
 ---
 
+## Tasks that run without you
+
+A reminder says something at a time. A **schedule runs the agent** — it reads files, searches,
+runs safe commands, and reports back in the chat where you asked for it, whether or not your
+laptop's lid is open.
+
+> *"daily at 8am, check my repo for failing CI and tell me what broke"*
+> *"every 30 minutes, look at data/queue.json and summarise anything new"*
+> *"daily at 9pm, summarise what I did today from the task list"*
+
+The agent asks for one of these, and you approve it once:
+
+```
+schedule  { "action": "add", "task": "check my repo for failing CI", "when": "daily at 8am" }
+schedule  { "action": "list" }
+schedule  { "action": "remove", "query": "failing CI" }
+```
+
+**Three cadence shapes, and only these.** `every 30m` (`m`/`h`/`d`), `daily at 09:00`
+(`9am`, `21:30`), `weekly on mon at 8:00`. Anything else is rejected with the list of shapes
+it does accept — it does not guess. There is a **5-minute floor** and a cap of **20 schedules**.
+
+### The human is missing, so the policy changes
+
+This is the part that matters. In a normal turn, a dangerous tool raises an approval prompt and
+waits for you. At 3am nobody answers. The tempting shortcut — auto-approve, it's only my own
+machine — turns one injected sentence into an unattended shell. So a scheduled run is an
+**unattended** turn with a stricter policy than an interactive one:
+
+- Every tool that changes something — `shell`, `write_file`, `screenshot`, `system_control` —
+  and `schedule` itself is **refused before the approval gate is reached**. Nothing waits for
+  you; nothing is left pending. The refusal appears in the transcript as a tool result
+  (*"Refused: shell needs a human's approval and nobody is here. Do the part you can do without
+  it…"*) and in the trace as `{denied: true, reason: "unattended"}`.
+- **A scheduled run cannot create a schedule.** A model that could do that could turn one
+  approved task into an unbounded number of them.
+- The turn is otherwise a normal turn: same tools, same memory, same honesty guard, same
+  telemetry — with `autonomy: "unattended"` recorded so `data/telemetry.ndjson` tells you which
+  turns had no human present.
+
+So the honest statement of what this is: **a scheduled run can read, search, calculate, recall,
+and report** — the assistant does the thinking on a timer and tells you what it found. It cannot
+change your machine while you are asleep. If a task genuinely needs to write a file, the run says
+so, and you do it in a turn you are present for.
+
+### What it deliberately does not do
+
+- **No catch-up bursts.** If the machine was asleep through four intervals, you get one run when
+  it wakes, not four back-to-back. Intervals are measured from the last run; if that slot already
+  passed, the next one is *now + interval*.
+- **Daily and weekly resolve in your timezone**, not the server's idea of UTC — and they always
+  land strictly in the future, so a schedule cannot fire twice for the same slot.
+- **No per-schedule cost cap** beyond the context budget every turn already has.
+- **No UI.** You create them by asking, which is the point; the panel lists nothing you can click
+  to edit. `schedule { action: "list" }` is the editor, and `{ action: "remove", query: "…" }` deletes one.
+- **`PINCH_SCHEDULED_RUNS=0`** (or `false`/`off`/`no`) stops every scheduled run and leaves
+  reminders working — the kill switch you want if a schedule misbehaves at 3am.
+
+Schedules live in `data/schedules.json`, a file you can read and delete. Each run reports as
+`⏱️ **Scheduled · <when>** — <task>` with a footer saying how many tools were refused, and the
+footer stays honest: if delivery to the origin channel fails, it falls back to the local panel
+and says so.
+
 ---
 
 ## The honesty guard
@@ -137,7 +201,7 @@ that edits the model's output is a second liar. This is a code-level check, not 
 | File | Job |
 |---|---|
 | `src/agent.js` | the tool loop: think → call → observe → repeat, max 8 rounds |
-| `src/tools.js` | the 21 tools, the workspace sandbox, the command screen |
+| `src/tools.js` | the 22 tools, the workspace sandbox, the command screen |
 | `src/brain.js` | Ollama and OpenAI-compatible clients, streaming, tool-call parsing |
 | `src/guard.js` | post-reply honesty audit |
 | `src/scheduler.js` | reminders, delivery, fallbacks |

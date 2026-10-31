@@ -20,6 +20,7 @@ import {
   addReminder, pendingReminders, removeReminder,
 } from "./store.js";
 import { parseWhen, humaniseDuration, formatClock } from "./timeparse.js";
+import { addSchedule, listSchedules, deleteSchedule } from "./schedules.js";
 
 /* ───────────────────────────── path sandboxing ─────────────────────────── */
 
@@ -963,6 +964,64 @@ export const TOOLS = [
       if (!matches.length) return { ok: false, output: `No pending reminder matches "${query}".` };
       for (const r of matches) removeReminder(r.id);
       return { ok: true, output: `Cancelled ${matches.length} reminder(s): ${matches.map((r) => r.text).join(", ")}` };
+    },
+  },
+  {
+    name: "schedule",
+    // Creating an unattended job is a machine-changing action: it will run
+    // tools later, with nobody watching. It goes through the approval prompt.
+    dangerous: true,
+    description:
+      "Manage tasks Pinch runs on a schedule without you. Use for 'every morning, summarise my " +
+      "unread issues', 'each Monday at 8, check the build'. Cadence shapes: 'every 30m', " +
+      "'daily at 09:00', 'weekly on mon at 8:00'. A scheduled run cannot use tools that need " +
+      "approval (shell, write_file, screenshot, system_control) and cannot create more schedules.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["add", "list", "remove"], description: "What to do" },
+        task: stringProp("For add: what to do each time, written as an instruction to yourself"),
+        when: stringProp("For add: the cadence, e.g. 'daily at 09:00' or 'every 2h'"),
+        query: stringProp("For remove: part of the task text to match"),
+      },
+      required: ["action"],
+    },
+    async run({ action, task, when, query }, ctx = {}) {
+      if (action === "list") {
+        const list = listSchedules();
+        if (!list.length) return { ok: true, output: "No scheduled tasks." };
+        return {
+          ok: true,
+          output: list
+            .map((s) => `- ${s.when} · ${s.task} → ${s.address}${s.nextRun ? ` (next ${formatClock(new Date(s.nextRun), config.timezone)})` : ""}`)
+            .join("\n"),
+        };
+      }
+
+      if (action === "remove") {
+        const needle = String(query || "").toLowerCase();
+        const matches = listSchedules().filter((s) => s.task.toLowerCase().includes(needle));
+        if (!matches.length) return { ok: false, output: `No schedule matches "${query}".` };
+        for (const s of matches) deleteSchedule(s.id);
+        return { ok: true, output: `Removed ${matches.length} schedule(s): ${matches.map((s) => s.task).join(", ")}` };
+      }
+
+      const result = addSchedule({
+        task,
+        when,
+        address: ctx.target || "web:main",
+        channel: ctx.channel || "web",
+        sessionId: ctx.sessionId || null,
+        timeZone: config.timezone,
+      });
+      if (!result.ok) return { ok: false, output: result.output };
+      const next = result.schedule.nextRun
+        ? formatClock(new Date(result.schedule.nextRun), config.timezone)
+        : "unknown";
+      return {
+        ok: true,
+        output: `Scheduled: "${result.schedule.task}" — ${result.schedule.cadence.label}, next at ${next}, delivering to ${result.schedule.address}.`,
+      };
     },
   },
   {

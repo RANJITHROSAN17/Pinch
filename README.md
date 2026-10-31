@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A personal AI assistant that runs on your own computer.</b><br/>
-  It reads your code, runs commands, remembers you, and sends you reminders.<br/>
+  It reads your code, runs commands, remembers you, sends you reminders, and runs the tasks you schedule.<br/>
   You talk to it from Telegram, Discord, Slack, WhatsApp — or your phone's browser, by voice.
 </p>
 
@@ -79,12 +79,12 @@ You message it like a person, and it works like a very fast intern who has your 
 
 ## What's inside
 
-21 tools. The four that change something ask permission first.
+22 tools. The five that change something ask permission first.
 
 |  | Tools |
 |---|---|
 | **Your machine** | `shell` ✅ · `read_file` · `write_file` ✅ · `list_dir` · `grep` · `scan_project` |
-| **Time & reminders** | `remind` · `list_reminders` · `cancel_reminder` · `time_now` |
+| **Time & reminders** | `remind` · `list_reminders` · `cancel_reminder` · `time_now` · `schedule` ✅ — a task Pinch runs on a cadence without you |
 | **Memory** | `remember` · `recall` · `forget` — facts about you, across restarts |
 | **Tasks** | `add_task` · `list_tasks` · `complete_task` |
 | **The world** | `search_web` · `calculator` · `open_url` |
@@ -113,7 +113,7 @@ The honest version, not a paragraph of reassurance:
 | `search_web` | the search query → DuckDuckGo |
 | Telegram / Discord / Slack | the message text → that platform |
 | Cloud model (only if you choose one in `.env`) | your prompts → that provider |
-| Memory, sessions, reminders, files, screenshots | **Nothing** |
+| Memory, sessions, reminders, schedules, files, screenshots | **Nothing** |
 
 ```bash
 grep -r "fetch(" src/    # every outbound call in the product

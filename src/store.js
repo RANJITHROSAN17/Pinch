@@ -265,6 +265,45 @@ export function pendingReminders() {
   return loadReminders().filter((r) => !r.fired && !r.cancelled);
 }
 
+/* ──────────────────────── schedules (unattended runs) ──────────────────── */
+
+const SCHEDULES_FILE = join(DATA, "schedules.json");
+
+export function loadSchedules() {
+  const list = readJson(SCHEDULES_FILE, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeSchedules(list) {
+  writeCached(SCHEDULES_FILE, list.slice(0, 50), JSON.stringify(list.slice(0, 50), null, 2));
+  return list;
+}
+
+export function saveSchedule(schedule) {
+  const list = loadSchedules();
+  const index = list.findIndex((s) => s.id === schedule.id);
+  if (index === -1) list.push(schedule);
+  else list[index] = schedule;
+  writeSchedules(list);
+  return schedule;
+}
+
+export function updateSchedule(id, patch) {
+  const list = loadSchedules();
+  const index = list.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+  list[index] = { ...list[index], ...patch };
+  writeSchedules(list);
+  return list[index];
+}
+
+export function removeSchedule(id) {
+  const list = loadSchedules();
+  const next = list.filter((s) => s.id !== id);
+  writeSchedules(next);
+  return list.length - next.length;
+}
+
 /* ─────────────────────────── tasks (agent queue) ───────────────────────── */
 
 const TASKS_FILE = join(DATA, "tasks.json");

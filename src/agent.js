@@ -171,7 +171,21 @@ export function describeCall(name, args) {
  * @param {string} opts.channel
  * @param {(event: object) => void} [opts.onEvent] live progress for the UI
  */
-export async function runAgent({ sessionId, text, attachments = [], channel = "web", target = "", onEvent = () => {} }) {
+export async function runAgent({
+  sessionId,
+  text,
+  attachments = [],
+  channel = "web",
+  target = "",
+  onEvent = () => {},
+  // "interactive" is a human in the loop. "unattended" is a scheduled run with
+  // nobody to ask — every dangerous tool is refused instead of prompted, and
+  // nothing can create another schedule, because a schedule that can spawn
+  // schedules is a fork bomb with a calendar.
+  autonomy = "interactive",
+  allowSchedule = true,
+}) {
+  const unattended = autonomy === "unattended";
   const startedAt = Date.now();
   const session = loadSession(sessionId);
   const recent = session.messages.filter((m) => m.role === "user" || m.role === "assistant").slice(-24);
@@ -287,6 +301,23 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
         continue;
       }
 
+      // A scheduled run has no human to ask, so the approval gate cannot apply.
+      // The tool is refused — not auto-approved, which would make a schedule a
+      // way to launder an approval, and not queued for later, which would make
+      // it a way to ambush the user with a prompt they never saw raised.
+      if (unattended && (DANGEROUS.has(tool.name) || (tool.name === "schedule" && !allowSchedule))) {
+        const why = tool.name === "schedule"
+          ? "a scheduled run cannot create another schedule"
+          : `${tool.name} needs a human's approval and nobody is here`;
+        messages.push({
+          role: "tool", name: call.name, toolCallId: call.id,
+          content: `Refused: ${why}. Do the part you can do without it, and say plainly in your answer what you could not do and why.`,
+        });
+        trace.push({ tool: tool.name, args: call.arguments, denied: true, reason: "unattended" });
+        onEvent({ type: "tool_done", name: tool.name, ok: false, preview: `refused (unattended): ${why}` });
+        continue;
+      }
+
       if (DANGEROUS.has(tool.name) && !config.autoApprove) {
         const { id, promise } = createApproval({ channel, sessionId, description: label });
         onEvent({ type: "approval", id, description: label });
@@ -368,6 +399,7 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
     kind: "turn",
     sessionId,
     channel,
+    autonomy,
     provider: config.llm.provider,
     ms,
     rounds,
