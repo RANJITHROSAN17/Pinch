@@ -16,6 +16,8 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { startScheduler } from "./scheduler.js";
 import { nodeSupport } from "./runtime.js";
+import { startMcpTools } from "./mcp.js";
+import { registerTool } from "./tools.js";
 
 const c = {
   coral: (s) => `\x1b[38;5;209m${s}\x1b[0m`,
@@ -68,6 +70,20 @@ async function main() {
     log.info(`brain: ${config.llm.openaiBaseUrl} · ${config.llm.openaiModel}` + (config.llm.openaiKey ? "" : c.gold("  (no API key set!)")));
   } else {
     log.warn(`brain: ${config.llm.provider} — canned replies only. Good for a smoke test, bad for work.`);
+  }
+
+  // ── third-party tools (MCP) ────────────────────────────────────────────
+  // Before the HTTP server starts, not after.
+  //
+  // Registering tools *after* listen() looked harmless and was not: /api/health
+  // answered immediately, so a message sent in the first second of boot was
+  // offered the built-in tools only and the model never learned the others
+  // existed. Tools have to be settled before anything can ask for them.
+  // A server that fails to start is skipped, not fatal.
+  let mcp = { stop: async () => {} };
+  if (config.mcpSpec) {
+    mcp = await startMcpTools({ registerTool, log });
+    if (mcp.registered.length) log.info(`mcp: ${mcp.registered.length} tool(s) from ${mcp.servers.length} server(s)`);
   }
 
   // ── http ───────────────────────────────────────────────────────────────
@@ -158,6 +174,7 @@ async function main() {
     console.log(c.dim("\n🦞 pinching out…"));
     scheduler.stop();
     stopAll();
+    mcp.stop().catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1500).unref();
   };

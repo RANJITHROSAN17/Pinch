@@ -20,6 +20,7 @@ from zero to a running assistant.
 - [Always-on](#always-on)
 - [Command line](#command-line)
 - [What Pinch did](#what-pinch-did)
+- [Third-party tools (MCP)](#third-party-tools-mcp)
 - [Configuration](#configuration)
 - [Extending it](#extending-it)
 - [This repo maintains itself (a little)](#this-repo-maintains-itself-a-little)
@@ -235,6 +236,40 @@ summarises the last 200 turns:
 `guardFlagRate` is the number worth watching. If it is near zero the honesty
 check is asleep; if it climbs, it is flagging correct answers and you will stop
 reading it. The file rotates at 5 MB and keeps three copies.
+
+## Third-party tools (MCP)
+
+Point Pinch at an [MCP](https://modelcontextprotocol.io) server and its tools
+become Pinch's tools. One line in `.env`:
+
+```bash
+PINCH_MCP="files=npx -y @modelcontextprotocol/server-filesystem /home/me"
+```
+
+Semicolons separate servers, the first `=` splits the name from the command,
+and the command splits on spaces. Restart, and the boot log says what arrived:
+
+```
+● mcp files: 9 tool(s) (each call needs your approval)
+```
+
+The model sees them namespaced — `mcp__files__read_file` — so a server can
+never shadow a built-in tool. **Every call to a third-party tool stops for your
+approval unless you name the server as trusted:**
+
+```bash
+PINCH_MCP_TRUSTED="files"      # I have read this server's code
+```
+
+That is the whole security story, so it is worth being blunt about it. An MCP
+server is arbitrary code from a registry, running with your user's permissions.
+Trust is per server, by name, in your own file, and it is off by default.
+
+What is not supported, and will not pretend to be: the HTTP/SSE transport
+(stdio only), server-provided resources and prompts (tools only), and OAuth.
+A server that fails to start is logged and skipped — it never stops Pinch
+booting. Tool output is wrapped in `<untrusted-source>` and treated as data,
+because a third-party tool is exactly as trustworthy as a web page you fetched.
 
 ## Configuration
 

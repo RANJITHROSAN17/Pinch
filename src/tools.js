@@ -1086,10 +1086,39 @@ export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
 /** Tool schemas in the shape both Ollama and OpenAI accept. */
 export function toolSchemas() {
-  return TOOLS.map((t) => ({
+  // Derived from the map, not the array, so a tool registered at boot (an MCP
+  // server, a user module) is offered to the model without touching this file.
+  return [...TOOL_MAP.values()].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
 }
 
 export const DANGEROUS = new Set(TOOLS.filter((t) => t.dangerous).map((t) => t.name));
+
+/**
+ * Add a tool at runtime.
+ *
+ * Deliberately one function rather than exposing the map: registering has to
+ * keep TOOL_MAP, DANGEROUS and the schema list in step, and a caller that
+ * remembers two of the three is a bug waiting to happen.
+ *
+ * A name that already exists is refused rather than overwritten — a third-party
+ * MCP server must never be able to replace `shell`.
+ */
+export function registerTool(tool, { dangerous = Boolean(tool.dangerous) } = {}) {
+  if (!tool?.name || typeof tool.run !== "function") {
+    throw new Error("registerTool needs { name, run }");
+  }
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tool.name)) {
+    throw new Error(`tool name "${tool.name}" must be letters, digits, dash or underscore (max 64)`);
+  }
+  const existing = TOOL_MAP.get(tool.name);
+  if (existing && existing !== tool) {
+    throw new Error(`a tool named "${tool.name}" is already registered`);
+  }
+  TOOL_MAP.set(tool.name, { parameters: { type: "object", properties: {} }, ...tool });
+  if (dangerous) DANGEROUS.add(tool.name);
+  else DANGEROUS.delete(tool.name);
+  return tool;
+}

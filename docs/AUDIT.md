@@ -526,6 +526,8 @@ Honesty is the feature. These are known, accepted, and documented rather than hi
 | Relative `cd ../../..` is not flagged by `describeEscapes` | It cannot be resolved lexically at all | The command itself is shown to the human at the approval prompt |
 | The shell screen is a denylist | An infinite space of shell syntax | Documented; the approval gate is the control, and it now shows argument values |
 | `grep` costs up to 3 s before it is killed | A worker thread per call | Bounded, and the message explains it |
+| An MCP server is arbitrary code with your user's permissions | That is what MCP is | Off by default, named in `.env`, every tool gated behind the approval prompt unless you explicitly trust the server; its output is labelled untrusted |
+| An MCP server is spawned with a scrubbed environment | Third-party code should not see your keys | `PINCH_ENV_PASSTHROUGH` re-adds a specific name if a server genuinely needs one |
 | An approval prompt can still be answered by anyone who can reach the panel | Single-user product; the key gates the panel | Keep `PINCH_KEY` set on anything but loopback |
 | Telemetry records timings and counts, not message text | Deliberate: a log of every question is a second copy of your conversations | `data/telemetry.ndjson` is plain text; delete it any time |
 
@@ -669,6 +671,36 @@ user had attached something, which is when instructions matter most.
 message, drops whole old messages instead, and records that it did so in the
 transcript. `PINCH_NUM_CTX` / `PINCH_NUM_PREDICT` make the numbers the user's
 choice rather than the code's assumption.
+
+---
+
+## MCP: adding a way to run third-party code, carefully
+
+`src/mcp.js` spawns a process and lets it offer tools to the model. That is a
+new attack surface, added deliberately, so here is what holds it:
+
+- **Off by default.** Nothing runs unless `PINCH_MCP` names a server. There is
+  no registry download, no default server, no "just works" that quietly starts
+  code you did not ask for.
+- **Dangerous by default.** `toPinchTool()` sets `dangerous: !trusted`, so every
+  call to a third-party tool stops at the in-chat approval prompt — the same
+  gate as `shell`. Trust is opt-in per server name, in your own `.env`.
+- **Namespaced.** `mcp__<server>__<tool>`, and `registerTool()` refuses to
+  overwrite an existing name, so a server cannot ship a `shell` tool and
+  intercept calls meant for ours.
+- **Scrubbed.** Servers inherit `childEnv()` — no `PINCH_KEY`, no API keys —
+  which is tested by asking a server to report what it can see.
+- **Bounded.** Every request has a deadline; a server that hangs times out, a
+  server that dies mid-call rejects instead of hanging, and a server that fails
+  to start is logged and skipped. Losing a third-party tool set never takes the
+  assistant down.
+- **Labelled.** Tool output is wrapped in `<untrusted-source>` for the same
+  reason an attachment is wrapped in `<untrusted-document>`: it is data from
+  somewhere else, not instructions.
+
+What this does **not** do: sandbox the server process (it runs as you), support
+the HTTP transport, or defend against a server that behaves until it is trusted
+and then does something else. Read the code of anything you trust.
 
 ---
 

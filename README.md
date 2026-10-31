@@ -81,6 +81,7 @@ You message it like a person, and it works like a very fast intern who has your 
 | **Memory** | `remember` · `recall` · `forget` — facts about you, across restarts |
 | **Tasks** | `add_task` · `list_tasks` · `complete_task` |
 | **The world** | `search_web` · `calculator` · `open_url` |
+| **Third-party tools** | MCP servers over stdio, namespaced, approval-gated unless you name the server trusted |
 | **Your desktop** | `screenshot` ✅ · `system_control` ✅ — lock/sleep, never shutdown |
 
 ✅ = asks you first.
