@@ -276,12 +276,15 @@
         "tools protocol",
         "integrations"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "no mcp reference anywhere in src/"
+        "src/mcp.js: JSON-RPC over stdio, initialize \u2192 tools/list \u2192 tools/call",
+        "src/tools.js: registerTool() \u2014 dynamic registry, refuses to shadow a built-in",
+        "test/mcp.test.js: 'a third-party tool is offered to the model over HTTP'",
+        "docs/GUIDE.md: the PINCH_MCP section"
       ],
-      "note": "The emerging interoperability standard. Its absence is the biggest structural gap against every competitor in this list."
+      "note": "stdio transport only, and every tool from an untrusted server goes through the approval gate. No HTTP/SSE transport, no server-side resources or prompts, no OAuth."
     },
     {
       "id": "plugin-api",
@@ -428,7 +431,7 @@
     },
     {
       "id": "observability",
-      "name": "Traces and dashboards for what the assistant did",
+      "name": "A local record of what each turn did",
       "keywords": [
         "observability",
         "tracing",
@@ -438,12 +441,14 @@
         "logs dashboard",
         "langfuse"
       ],
-      "status": "missing",
+      "status": "partial",
       "policy": "settled",
       "evidence": [
-        "src/index.js: a line-oriented log to stdout and nothing else"
+        "src/telemetry.js: one NDJSON line per turn, rotated at 5 MB",
+        "GET /api/health: p50/p95, error rate, guard-flag rate",
+        "test/batch2.test.js: 'a completed turn is recorded, and health reports the numbers'"
       ],
-      "note": "No telemetry is a selling point, not an omission. A local log is the right amount of visibility for one laptop."
+      "note": "Local only, never transmitted, and it records timings and counts \u2014 not message text. No dashboards and no distributed tracing: this is a file you can `tail`, not an observability platform."
     }
   ]
 }

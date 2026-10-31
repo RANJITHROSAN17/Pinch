@@ -546,7 +546,7 @@ async function attachFiles(files) {
       // endpoint that accepts a file.
       const res = await fetch("/api/attach", {
         method: "POST",
-        headers: { ...headers(), "x-filename": file.name },
+        headers: { ...headers(), "x-filename": file.name, "x-pinch-session": store.sessionId },
         body: file,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

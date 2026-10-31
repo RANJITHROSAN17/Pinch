@@ -403,14 +403,21 @@ test("--json emits the documented shape and decides exactly one thing", () => {
   assert.ok(report.reason.length > 0, "a decision always carries its reason");
   assert.equal(report.today, TODAY);
   assert.equal(report.label, "growth");
+  // The shape is { files: [...] , annotates: [...] } — one entry per proposal.
+  // This branch was never executed until a real finding appeared, at which
+  // point it turned out to be asserting a shape the script has never emitted.
   if (report.decision === "file") {
-    assert.match(report.title, /^growth: /);
-    assert.match(report.markdown, /growth:fingerprint:/);
-    assert.equal(report.issue, null);
+    assert.ok(Array.isArray(report.files) && report.files.length >= 1, "a filing decision names what it would file");
+    assert.equal(report.files.length, 1, "one run proposes one thing");
+    const proposal = report.files[0];
+    assert.match(proposal.title, /^growth: /);
+    assert.match(proposal.markdown, /growth:fingerprint:/);
+    assert.equal(typeof proposal.fingerprint, "string");
   }
   if (report.decision === "annotate") {
-    assert.equal(typeof report.issue, "number");
-    assert.match(report.markdown, /growth:spec:#/);
+    assert.ok(Array.isArray(report.annotates) && report.annotates.length >= 1);
+    assert.equal(typeof report.annotates[0].issue, "number");
+    assert.match(report.annotates[0].markdown, /growth:spec:#/);
   }
   assert.ok(Array.isArray(report.ranked));
 });

@@ -203,6 +203,13 @@ export function describeEscapes(command) {
       real === root || real.startsWith(root + "/"));
     if (!inside) outside.add(path);
   }
+  // `cd ../../..` cannot be resolved without knowing the cwd, and pretending
+  // otherwise would be worse than saying it: flag the shape so the human sees
+  // that the command intends to leave, even though we cannot name where it lands.
+  if (/(?:^|[;&|]\s*)cd\s+(?:\.\.?(?:\/|\s|$))/.test(String(command))) {
+    outside.add("a relative path (cd ..) — target cannot be resolved before it runs");
+  }
+
   return [...outside].slice(0, 4);
 }
 
@@ -524,6 +531,15 @@ export function grepInWorker({ root, pattern, glob }, timeoutMs = GREP_TIMEOUT_M
 
 const stringProp = (description) => ({ type: "string", description });
 
+/** decodeURIComponent that returns its input rather than throwing. */
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Fire-and-forget opener for a URL, per platform. Never shells out user text. */
 function openUrl(url) {
   const opener =
@@ -816,8 +832,10 @@ export const TOOLS = [
               .trim();
           };
           const rawUrl = m[1];
+          // decodeURIComponent throws on a malformed escape ("%zz"), and one
+          // bad result used to abort the whole search.
           const clean = rawUrl.includes("uddg=")
-            ? decodeURIComponent(rawUrl.split("uddg=")[1].split("&")[0])
+            ? safeDecode(rawUrl.split("uddg=")[1].split("&")[0])
             : rawUrl;
           results.push(`${results.length + 1}. ${decode(m[2])}\n   ${clean}\n   ${decode(m[3]).slice(0, 220)}`);
         }
@@ -1068,10 +1086,39 @@ export const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
 
 /** Tool schemas in the shape both Ollama and OpenAI accept. */
 export function toolSchemas() {
-  return TOOLS.map((t) => ({
+  // Derived from the map, not the array, so a tool registered at boot (an MCP
+  // server, a user module) is offered to the model without touching this file.
+  return [...TOOL_MAP.values()].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
 }
 
 export const DANGEROUS = new Set(TOOLS.filter((t) => t.dangerous).map((t) => t.name));
+
+/**
+ * Add a tool at runtime.
+ *
+ * Deliberately one function rather than exposing the map: registering has to
+ * keep TOOL_MAP, DANGEROUS and the schema list in step, and a caller that
+ * remembers two of the three is a bug waiting to happen.
+ *
+ * A name that already exists is refused rather than overwritten — a third-party
+ * MCP server must never be able to replace `shell`.
+ */
+export function registerTool(tool, { dangerous = Boolean(tool.dangerous) } = {}) {
+  if (!tool?.name || typeof tool.run !== "function") {
+    throw new Error("registerTool needs { name, run }");
+  }
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tool.name)) {
+    throw new Error(`tool name "${tool.name}" must be letters, digits, dash or underscore (max 64)`);
+  }
+  const existing = TOOL_MAP.get(tool.name);
+  if (existing && existing !== tool) {
+    throw new Error(`a tool named "${tool.name}" is already registered`);
+  }
+  TOOL_MAP.set(tool.name, { parameters: { type: "object", properties: {} }, ...tool });
+  if (dangerous) DANGEROUS.add(tool.name);
+  else DANGEROUS.delete(tool.name);
+  return tool;
+}

@@ -19,6 +19,8 @@ from zero to a running assistant.
 - [What leaves your machine](#what-leaves-your-machine)
 - [Always-on](#always-on)
 - [Command line](#command-line)
+- [What Pinch did](#what-pinch-did)
+- [Third-party tools (MCP)](#third-party-tools-mcp)
 - [Configuration](#configuration)
 - [Extending it](#extending-it)
 - [This repo maintains itself (a little)](#this-repo-maintains-itself-a-little)
@@ -209,6 +211,66 @@ Installs only when you ask. `systemctl stop pinch` and it is gone; `data/` and `
 
 ---
 
+## What Pinch did
+
+Every turn appends one line to `data/telemetry.ndjson` — and nothing else about
+it leaves the machine:
+
+```bash
+tail -n 1 data/telemetry.ndjson | python3 -m json.tool
+# { "at": "2026-10-31T09:12:44.101Z", "kind": "turn", "sessionId": "web-main",
+#   "channel": "web", "provider": "ollama", "ms": 4210, "rounds": 2,
+#   "tokens": 3811, "tools": 1, "guardFlags": 0, "error": null }
+```
+
+Timings and counts, never the text: a log of everything you asked is a second
+copy of your conversations with none of the protections. `GET /api/health`
+summarises the last 200 turns:
+
+```json
+"turns": { "turns": 42, "p50Ms": 3900, "p95Ms": 11800, "errorRate": 0.02,
+           "guardFlagRate": 0.07, "avgRounds": 1.4, "avgTokens": 4200 },
+"contextWindow": { "tokens": 8192, "reserveForReply": 2048 }
+```
+
+`guardFlagRate` is the number worth watching. If it is near zero the honesty
+check is asleep; if it climbs, it is flagging correct answers and you will stop
+reading it. The file rotates at 5 MB and keeps three copies.
+
+## Third-party tools (MCP)
+
+Point Pinch at an [MCP](https://modelcontextprotocol.io) server and its tools
+become Pinch's tools. One line in `.env`:
+
+```bash
+PINCH_MCP="files=npx -y @modelcontextprotocol/server-filesystem /home/me"
+```
+
+Semicolons separate servers, the first `=` splits the name from the command,
+and the command splits on spaces. Restart, and the boot log says what arrived:
+
+```
+● mcp files: 9 tool(s) (each call needs your approval)
+```
+
+The model sees them namespaced — `mcp__files__read_file` — so a server can
+never shadow a built-in tool. **Every call to a third-party tool stops for your
+approval unless you name the server as trusted:**
+
+```bash
+PINCH_MCP_TRUSTED="files"      # I have read this server's code
+```
+
+That is the whole security story, so it is worth being blunt about it. An MCP
+server is arbitrary code from a registry, running with your user's permissions.
+Trust is per server, by name, in your own file, and it is off by default.
+
+What is not supported, and will not pretend to be: the HTTP/SSE transport
+(stdio only), server-provided resources and prompts (tools only), and OAuth.
+A server that fails to start is logged and skipped — it never stops Pinch
+booting. Tool output is wrapped in `<untrusted-source>` and treated as data,
+because a third-party tool is exactly as trustworthy as a web page you fetched.
+
 ## Configuration
 
 Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
@@ -221,6 +283,8 @@ Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
 | `PINCH_WORKSPACE` | `~` | the **only** roots the agent may touch — narrow this |
 | `PINCH_AUTO_APPROVE` | `false` | skip the approval gate (don't) |
 | `PINCH_SHELL_TIMEOUT` | `120` | seconds per command |
+| `PINCH_NUM_CTX` | `8192` | context window in tokens; raise it to what your model supports |
+| `PINCH_NUM_PREDICT` | `2048` | tokens reserved for the reply — never counted as history |
 | `PINCH_GUARD` | `on` | post-reply honesty audit |
 | `PINCH_ENV_PASSTHROUGH` | — | credential names a build may see, comma-separated |
 | `PINCH_ALLOWED_HOSTS` | — | extra hostnames (proxy/tunnel), wildcards ok |
