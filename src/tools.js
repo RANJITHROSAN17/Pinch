@@ -23,7 +23,8 @@ import { parseWhen, humaniseDuration, formatClock } from "./timeparse.js";
 
 /* ───────────────────────────── path sandboxing ─────────────────────────── */
 
-const GREP_BYTE_CAP = 400_000;
+// (GREP_BYTE_CAP lived here until the scan moved to grep-worker.js, which caps
+// its own reads. One definition of "how much of a file is enough to search".)
 
 export class SafePathError extends Error {}
 
