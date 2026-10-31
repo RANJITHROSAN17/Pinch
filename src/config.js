@@ -92,6 +92,11 @@ export const config = Object.freeze({
   // Credential-looking env vars a build may legitimately need.
   envPassthrough: list(env.PINCH_ENV_PASSTHROUGH),
   shellTimeoutMs: Number(env.PINCH_SHELL_TIMEOUT || 120) * 1000,
+  // Context window, and how much of it to keep free for the reply. A 7B qwen
+  // on a laptop handles 32k; the old hard-coded 8192 could not hold the system
+  // prompt, the tool schemas and one attachment at the same time.
+  numCtx: Number(env.PINCH_NUM_CTX || 8192),
+  numPredict: Number(env.PINCH_NUM_PREDICT || 2048),
 
   telegram: Object.freeze({
     token: env.TELEGRAM_TOKEN || "",

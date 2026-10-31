@@ -19,6 +19,7 @@ from zero to a running assistant.
 - [What leaves your machine](#what-leaves-your-machine)
 - [Always-on](#always-on)
 - [Command line](#command-line)
+- [What Pinch did](#what-pinch-did)
 - [Configuration](#configuration)
 - [Extending it](#extending-it)
 - [This repo maintains itself (a little)](#this-repo-maintains-itself-a-little)
@@ -209,6 +210,32 @@ Installs only when you ask. `systemctl stop pinch` and it is gone; `data/` and `
 
 ---
 
+## What Pinch did
+
+Every turn appends one line to `data/telemetry.ndjson` — and nothing else about
+it leaves the machine:
+
+```bash
+tail -n 1 data/telemetry.ndjson | python3 -m json.tool
+# { "at": "2026-10-31T09:12:44.101Z", "kind": "turn", "sessionId": "web-main",
+#   "channel": "web", "provider": "ollama", "ms": 4210, "rounds": 2,
+#   "tokens": 3811, "tools": 1, "guardFlags": 0, "error": null }
+```
+
+Timings and counts, never the text: a log of everything you asked is a second
+copy of your conversations with none of the protections. `GET /api/health`
+summarises the last 200 turns:
+
+```json
+"turns": { "turns": 42, "p50Ms": 3900, "p95Ms": 11800, "errorRate": 0.02,
+           "guardFlagRate": 0.07, "avgRounds": 1.4, "avgTokens": 4200 },
+"contextWindow": { "tokens": 8192, "reserveForReply": 2048 }
+```
+
+`guardFlagRate` is the number worth watching. If it is near zero the honesty
+check is asleep; if it climbs, it is flagging correct answers and you will stop
+reading it. The file rotates at 5 MB and keeps three copies.
+
 ## Configuration
 
 Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
@@ -221,6 +248,8 @@ Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
 | `PINCH_WORKSPACE` | `~` | the **only** roots the agent may touch — narrow this |
 | `PINCH_AUTO_APPROVE` | `false` | skip the approval gate (don't) |
 | `PINCH_SHELL_TIMEOUT` | `120` | seconds per command |
+| `PINCH_NUM_CTX` | `8192` | context window in tokens; raise it to what your model supports |
+| `PINCH_NUM_PREDICT` | `2048` | tokens reserved for the reply — never counted as history |
 | `PINCH_GUARD` | `on` | post-reply honesty audit |
 | `PINCH_ENV_PASSTHROUGH` | — | credential names a build may see, comma-separated |
 | `PINCH_ALLOWED_HOSTS` | — | extra hostnames (proxy/tunnel), wildcards ok |

@@ -428,7 +428,7 @@
     },
     {
       "id": "observability",
-      "name": "Traces and dashboards for what the assistant did",
+      "name": "A local record of what each turn did",
       "keywords": [
         "observability",
         "tracing",
@@ -438,12 +438,14 @@
         "logs dashboard",
         "langfuse"
       ],
-      "status": "missing",
+      "status": "partial",
       "policy": "settled",
       "evidence": [
-        "src/index.js: a line-oriented log to stdout and nothing else"
+        "src/telemetry.js: one NDJSON line per turn, rotated at 5 MB",
+        "GET /api/health: p50/p95, error rate, guard-flag rate",
+        "test/batch2.test.js: 'a completed turn is recorded, and health reports the numbers'"
       ],
-      "note": "No telemetry is a selling point, not an omission. A local log is the right amount of visibility for one laptop."
+      "note": "Local only, never transmitted, and it records timings and counts \u2014 not message text. No dashboards and no distributed tracing: this is a file you can `tail`, not an observability platform."
     }
   ]
 }

@@ -13,6 +13,7 @@
  *             `npm run demo` on a machine with no model installed
  */
 import { config } from "./config.js";
+import { fit, ctx } from "./budget.js";
 
 const TIMEOUT_MS = 180_000;
 
@@ -118,11 +119,14 @@ const ollama = {
   name: "ollama",
 
   async chat(messages, { tools = [], model, onDelta } = {}) {
+    // Trim to the window *before* the provider does it for us. Ollama drops
+    // from the front on overflow, which deletes the system prompt first.
+    const { messages: fitted, dropped } = fit(messages, { tools });
     const body = {
       model: model || config.llm.ollamaModel,
-      messages: toOllamaMessages(messages),
+      messages: toOllamaMessages(fitted),
       stream: Boolean(onDelta),
-      options: { temperature: 0.4, num_ctx: 8192 },
+      options: { temperature: 0.4, num_ctx: ctx.numCtx, num_predict: ctx.numPredict },
     };
     if (tools.length) body.tools = tools;
 
@@ -134,14 +138,8 @@ const ollama = {
       const message = out.message || {};
       return {
         content: message.content || "",
-        toolCalls: (message.tool_calls || []).map((call, i) => ({
-          id: `call_${Date.now()}_${i}`,
-          name: call.function?.name,
-          arguments:
-            typeof call.function?.arguments === "string"
-              ? safeParse(call.function.arguments)
-              : call.function?.arguments || {},
-        })),
+        toolCalls: (message.tool_calls || []).map((call, i) =>
+          toCall(`call_${Date.now()}_${i}`, call.function?.name, call.function?.arguments)),
         provider: "ollama",
         raw: out,
       };
@@ -161,14 +159,7 @@ const ollama = {
           onDelta(piece);
         }
         for (const call of chunk.message?.tool_calls || []) {
-          calls.push({
-            id: `call_${Date.now()}_${calls.length}`,
-            name: call.function?.name,
-            arguments:
-              typeof call.function?.arguments === "string"
-                ? safeParse(call.function.arguments)
-                : call.function?.arguments || {},
-          });
+          calls.push(toCall(`call_${Date.now()}_${calls.length}`, call.function?.name, call.function?.arguments));
         }
       }, false);
     } finally {
@@ -180,7 +171,7 @@ const ollama = {
     if (!finished && content.trim()) {
       throw new Error("the model stream ended before it finished — the reply was cut off");
     }
-    return { content, toolCalls: calls, provider: "ollama" };
+    return { content, toolCalls: calls, provider: "ollama", dropped };
   },
 
   async probe() {
@@ -232,10 +223,12 @@ const openai = {
 
   async chat(messages, { tools = [], model, onDelta } = {}) {
     if (!config.llm.openaiKey) throw new Error("OPENAI_API_KEY is not set");
+    const { messages: fitted, dropped } = fit(messages, { tools });
     const body = {
       model: model || config.llm.openaiModel,
-      messages: toOpenAiMessages(messages),
+      messages: toOpenAiMessages(fitted),
       temperature: 0.4,
+      max_tokens: ctx.numPredict,
     };
     if (tools.length) {
       body.tools = tools.map((t) => ({ type: "function", function: t.function }));
@@ -248,12 +241,10 @@ const openai = {
       const out = await postJson(url, body, headers);
       const message = out.choices?.[0]?.message || {};
       return {
+        dropped,
         content: message.content || "",
-        toolCalls: (message.tool_calls || []).map((call) => ({
-          id: call.id || `call_${Date.now()}`,
-          name: call.function?.name,
-          arguments: safeParse(call.function?.arguments),
-        })),
+        toolCalls: (message.tool_calls || []).map((call) =>
+          toCall(call.id || `call_${Date.now()}`, call.function?.name, call.function?.arguments)),
         provider: "openai",
         raw: out,
       };
@@ -291,11 +282,7 @@ const openai = {
 
     const toolCalls = [...partial.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([i, entry]) => ({
-        id: entry.id || `call_${Date.now()}_${i}`,
-        name: entry.name,
-        arguments: safeParse(entry.args),
-      }))
+      .map(([i, entry]) => toCall(entry.id || `call_${Date.now()}_${i}`, entry.name, entry.args))
       .filter((call) => call.name);
 
     // "length" means the model was cut off by its own output limit; no
@@ -306,7 +293,7 @@ const openai = {
     } else if (!finishReason && content.trim()) {
       throw new Error("the model stream ended before it finished — the reply was cut off");
     }
-    return { content, toolCalls, provider: "openai" };
+    return { content, toolCalls, provider: "openai", dropped };
   },
 
   async probe() {
@@ -408,7 +395,40 @@ export function safeParse(value) {
   }
 }
 
+/**
+ * Parse a tool call's arguments, but remember when it failed.
+ *
+ * `safeParse` returned `{}` on a bad payload, so a model that emitted
+ * `{"path": "src/a.js",}` — a trailing comma, which is common — had its
+ * arguments silently replaced with emptiness and the tool still ran, usually
+ * doing nothing useful and reporting a confusing error. The failure is now
+ * carried on the call so the agent can tell the model to re-emit it.
+ */
+export function parseArgs(value) {
+  if (value == null) return { value: {}, error: null };
+  if (typeof value === "object") return { value, error: null };
+  const text = String(value).trim();
+  if (!text) return { value: {}, error: null };
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { value: {}, error: "arguments must be a JSON object" };
+    }
+    return { value: parsed, error: null };
+  } catch (err) {
+    return { value: {}, error: String(err.message || err) };
+  }
+}
+
+/** One place where a provider's tool call becomes our shape. */
+function toCall(id, name, rawArgs) {
+  const { value, error } = parseArgs(rawArgs);
+  return error ? { id, name, arguments: value, parseError: error } : { id, name, arguments: value };
+}
+
 const PROVIDERS = { ollama, openai, mock };
+
+let probeCache = null;
 
 export const brain = {
   get provider() {
@@ -419,7 +439,9 @@ export const brain = {
     return this.provider.chat(messages, options);
   },
 
-  async probe() {
+  /** Probe every provider, cached for 30 s — the panel asks on every load. */
+  async probe({ fresh = false } = {}) {
+    if (!fresh && probeCache && Date.now() - probeCache.at < 30_000) return probeCache.value;
     const results = {};
     for (const [name, impl] of Object.entries(PROVIDERS)) {
       try {
@@ -428,6 +450,7 @@ export const brain = {
         results[name] = { ok: false, error: String(err.message || err) };
       }
     }
+    probeCache = { at: Date.now(), value: results };
     return results;
   },
 };

@@ -58,7 +58,14 @@ async function deliverDue(now) {
 
 export function startScheduler(logger = console) {
   log = logger;
-  if (timer) return { stop: () => clearInterval(timer) };
+  if (timer) {
+    return {
+      stop: () => {
+        clearInterval(timer);
+        timer = null;
+      },
+    };
+  }
   timer = setInterval(() => {
     tick().catch((err) => log.warn?.(`scheduler: ${err.message}`));
   }, TICK_MS);

@@ -12,13 +12,15 @@ import { networkInterfaces } from "node:os";
 import { extract, putAttachment, takeAttachments, MAX_BYTES } from "./attachments.js";
 import { config } from "./config.js";
 import { brain } from "./brain.js";
-import { runAgent, answerApproval, pendingApprovals } from "./agent.js";
+import { runAgent, answerApproval, pendingApprovals, pendingApprovalsFor, answerApprovalFor } from "./agent.js";
 import {
   ensureData, loadMemory, saveMemory, remember, forget,
   listSessions, loadSession, deleteSession, loadTasks,
   loadReminders, pendingReminders, removeReminder,
 } from "./store.js";
 import { registerSender } from "./outbound.js";
+import { stats as turnStats } from "./telemetry.js";
+import { ctx as ctxWindow } from "./budget.js";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -294,6 +296,10 @@ async function handleApi(req, res, url) {
       pendingReminders: pendingReminders().length,
       streaming: true,
       guard: !config.disableGuard,
+      // p50/p95, error rate and how often the honesty guard raises a flag —
+      // the last of those decides whether the guard is worth keeping on.
+      turns: turnStats(),
+      contextWindow: { tokens: ctxWindow.numCtx, reserveForReply: ctxWindow.numPredict },
       uptimeSeconds: Math.round((Date.now() - started) / 1000),
       workspace: config.workspaceRoots,
     });
@@ -322,8 +328,12 @@ async function handleApi(req, res, url) {
     // The name is a display string and nothing else — attachments.js never
     // builds a path from it, and the queue below lives in memory.
     const name = String(req.headers["x-filename"] || "attachment").slice(0, 200);
+    // The queue is keyed by the session the file belongs to, so two people on
+    // the same Wi-Fi cannot consume or evict each other's pending uploads.
+    const owner = String(req.headers["x-pinch-session"] || url.searchParams.get("session") || "web-main")
+      .replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
     const record = extract(raw, name);
-    const id = putAttachment(record);
+    const id = putAttachment(record, owner);
     return json(res, 200, {
       id,
       name: record.name,
@@ -353,17 +363,17 @@ async function handleApi(req, res, url) {
     // *and* started a second agent turn with the word "yes" as the question —
     // two runs interleaving on one session file, the second reply landing above
     // the first. The chat channels never had this bug because router.js returns.
-    if (pendingApprovals("web").length) {
+    if (pendingApprovalsFor(sessionId).length) {
       const yes = /^(yes|y|allow|ok|approve)$/i.test(text);
       const no = /^(no|n|deny|stop|cancel)$/i.test(text);
       if (yes || no) {
-        answerApproval(pendingApprovals("web").at(-1).id, yes);
+        answerApprovalFor({ sessionId, channel: "web" }, yes);
         stream.send("final", { text: yes ? "🦞 Allowed. On it." : "🦞 Denied — I'll leave that alone.", trace: [], sessionId });
         return stream.close();
       }
     }
     try {
-      const attachments = takeAttachments(body.attachments);
+        const attachments = takeAttachments(body.attachments, sessionId);
       const result = await runAgent({
         sessionId,
         text,

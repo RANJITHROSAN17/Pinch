@@ -203,6 +203,13 @@ export function describeEscapes(command) {
       real === root || real.startsWith(root + "/"));
     if (!inside) outside.add(path);
   }
+  // `cd ../../..` cannot be resolved without knowing the cwd, and pretending
+  // otherwise would be worse than saying it: flag the shape so the human sees
+  // that the command intends to leave, even though we cannot name where it lands.
+  if (/(?:^|[;&|]\s*)cd\s+(?:\.\.?(?:\/|\s|$))/.test(String(command))) {
+    outside.add("a relative path (cd ..) — target cannot be resolved before it runs");
+  }
+
   return [...outside].slice(0, 4);
 }
 
@@ -524,6 +531,15 @@ export function grepInWorker({ root, pattern, glob }, timeoutMs = GREP_TIMEOUT_M
 
 const stringProp = (description) => ({ type: "string", description });
 
+/** decodeURIComponent that returns its input rather than throwing. */
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Fire-and-forget opener for a URL, per platform. Never shells out user text. */
 function openUrl(url) {
   const opener =
@@ -816,8 +832,10 @@ export const TOOLS = [
               .trim();
           };
           const rawUrl = m[1];
+          // decodeURIComponent throws on a malformed escape ("%zz"), and one
+          // bad result used to abort the whole search.
           const clean = rawUrl.includes("uddg=")
-            ? decodeURIComponent(rawUrl.split("uddg=")[1].split("&")[0])
+            ? safeDecode(rawUrl.split("uddg=")[1].split("&")[0])
             : rawUrl;
           results.push(`${results.length + 1}. ${decode(m[2])}\n   ${clean}\n   ${decode(m[3]).slice(0, 220)}`);
         }

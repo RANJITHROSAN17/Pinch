@@ -47,6 +47,9 @@ those 91 tests fail against `5242ea2`.**
 | 16 | A reminder could be delivered twice when a tick outlived the 15 s interval | **Medium** | Fixed + tested |
 | 17 | A model stream that closed early was stored as a complete answer | **Medium** | Fixed + tested |
 | 18 | The honesty guard flagged emails/URLs quoted from an attachment as invented | **Medium** | Fixed + tested |
+| 19 | An approval could be answered by a *different* conversation on the same channel | **Medium** | Fixed + tested |
+| 20 | Pending attachments were process-global: any client could consume or evict another's | **Medium** | Fixed + tested |
+| 21 | The context window was unmanaged — on overflow Ollama drops the system prompt first | **Medium** | Fixed + tested |
 
 Severity here means: *given the intended deployment — a personal assistant you message all
 day, with shell access to your machine and an LLM reading untrusted text.* Under that
@@ -523,7 +526,8 @@ Honesty is the feature. These are known, accepted, and documented rather than hi
 | Relative `cd ../../..` is not flagged by `describeEscapes` | It cannot be resolved lexically at all | The command itself is shown to the human at the approval prompt |
 | The shell screen is a denylist | An infinite space of shell syntax | Documented; the approval gate is the control, and it now shows argument values |
 | `grep` costs up to 3 s before it is killed | A worker thread per call | Bounded, and the message explains it |
-| `data/sessions` is read wholesale to list sessions | Simplicity, at 13 ms for 300 sessions | Fine to thousands of sessions; a real database would break "read your own data with `cat`" |
+| An approval prompt can still be answered by anyone who can reach the panel | Single-user product; the key gates the panel | Keep `PINCH_KEY` set on anything but loopback |
+| Telemetry records timings and counts, not message text | Deliberate: a log of every question is a second copy of your conversations | `data/telemetry.ndjson` is plain text; delete it any time |
 
 ---
 
@@ -628,6 +632,43 @@ The user message persisted is the bare text, and `auditReply` was given the same
 so a reply quoting an invoice attached as a PDF was flagged as inventing the address. A
 guard with false positives gets switched off, and then the true positives are gone too.
 **Fix.** the attachment text is part of the evidence set.
+
+---
+
+## 19–21. Third pass, 2026-10-31 — the rest of the review
+
+### 19. An approval was scoped to a channel name
+
+`answerApprovalByChannel` resolved the newest prompt whose `channel` matched.
+Two conversations behind one bot — two Telegram chats, two browser tabs — are
+both `"telegram"`, so a **yes in one could approve a command raised in the
+other**. Approvals now carry the `sessionId` that raised them, and
+`answerApprovalFor()` matches on that first, falling back to the channel only
+when the caller has no session to offer.
+
+### 20. The attachment queue had no owner
+
+`putAttachment` kept one process-wide map capped at 8 entries: eight uploads
+from any client evicted another client's pending file, and `takeAttachments`
+would hand over whatever id it was given. The ids embedded a millisecond
+timestamp, so the only barrier was obfuscation. Records are now keyed by the
+session that uploaded them, ids carry 72 bits of entropy, and someone else's id
+is ignored exactly as an expired one is — "that exists but is not yours" is
+itself information.
+
+### 21. The context window was unmanaged
+
+`num_ctx` was a hard-coded 8192 while the tool schemas alone are ~2 000 tokens,
+the system prompt ~800 and one attachment up to ~4 400. A long document plus a
+modest history overflowed, and Ollama truncates from the **front** — deleting
+the system prompt first. The personality, the "never claim what you did not do"
+instruction and the honesty contract all vanished silently, precisely when the
+user had attached something, which is when instructions matter most.
+
+`src/budget.js` now reserves room for the reply, never drops the system
+message, drops whole old messages instead, and records that it did so in the
+transcript. `PINCH_NUM_CTX` / `PINCH_NUM_PREDICT` make the numbers the user's
+choice rather than the code's assumption.
 
 ---
 

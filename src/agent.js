@@ -17,9 +17,11 @@ import { loadSession, appendMessage, loadMemory } from "./store.js";
 import { auditReply, renderGuardNote } from "./guard.js";
 import { addressFor } from "./outbound.js";
 import { renderForPrompt } from "./attachments.js";
-import { config as cfg } from "./config.js";
+import { record } from "./telemetry.js";
 
 const MAX_ROUNDS = 8;
+/** Characters of tool output one turn may carry into the context, in total. */
+const TOOL_OUTPUT_BUDGET = 24_000;
 const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /* ───────────────────────────── approvals ───────────────────────────────── */
@@ -30,7 +32,7 @@ const approvals = new Map(); // id -> { resolve, timer, channel, description, cr
  * Create a permission prompt. Returns { id, promise } so the blocking
  * caller and the channel that draws the buttons share the same id.
  */
-export function createApproval({ channel, description }) {
+export function createApproval({ channel, sessionId = "", description }) {
   const id = `ap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   let entry;
   const promise = new Promise((resolve) => {
@@ -40,7 +42,7 @@ export function createApproval({ channel, description }) {
     }, APPROVAL_TIMEOUT_MS);
     // A prompt nobody answers must not be the only reason the process is alive.
     timer.unref?.();
-    entry = { resolve, timer, channel, description, createdAt: Date.now() };
+    entry = { resolve, timer, channel, sessionId, description, createdAt: Date.now() };
     approvals.set(id, entry);
   });
   return { id, promise };
@@ -56,7 +58,25 @@ export function answerApproval(id, allowed) {
   return true;
 }
 
-/** "yes" / "no" typed in chat: resolves the newest pending prompt for that channel. */
+/**
+ * "yes" / "no" typed in chat.
+ *
+ * Matches on session first: two conversations on one channel (two Telegram
+ * chats behind one bot, two browser tabs) both looked like "telegram", so a
+ * yes in one could approve a command raised in the other. Falls back to the
+ * channel when the caller has no session to offer.
+ */
+export function answerApprovalFor({ sessionId, channel }, allowed) {
+  if (sessionId) {
+    const entries = [...approvals.entries()]
+      .filter(([, v]) => v.sessionId === sessionId)
+      .sort((a, b) => b[1].createdAt - a[1].createdAt);
+    if (entries.length) return answerApproval(entries[0][0], allowed);
+  }
+  return answerApprovalByChannel(channel, allowed);
+}
+
+/** @deprecated prefer answerApprovalFor — a channel is not an identity. */
 export function answerApprovalByChannel(channel, allowed) {
   const entries = [...approvals.entries()]
     .filter(([, v]) => v.channel === channel)
@@ -68,7 +88,46 @@ export function answerApprovalByChannel(channel, allowed) {
 export function pendingApprovals(channel) {
   return [...approvals.entries()]
     .filter(([, v]) => !channel || v.channel === channel)
-    .map(([id, v]) => ({ id, channel: v.channel, description: v.description }));
+    .map(([id, v]) => ({ id, channel: v.channel, sessionId: v.sessionId, description: v.description }));
+}
+
+/** Pending prompts for one conversation — what the panel and router ask for. */
+export function pendingApprovalsFor(sessionId) {
+  return [...approvals.entries()]
+    .filter(([, v]) => v.sessionId === sessionId)
+    .map(([id, v]) => ({ id, channel: v.channel, sessionId: v.sessionId, description: v.description }));
+}
+
+/* ─────────────────────────── tool argument contract ────────────────────── */
+
+/**
+ * Check a call against the tool's own JSON Schema before anything runs.
+ *
+ * The schema was documentation: the model was trusted to fill required fields
+ * and not invent others, and `write_file` with `path: undefined` reached the
+ * filesystem as `.`. A missing argument is now a sentence the model can act
+ * on, which measurably improves small-model tool use — and an unknown one is
+ * usually a hallucinated parameter name, which is worth saying out loud.
+ *
+ * @returns {string|null} a message for the model, or null if the call is fine
+ */
+export function validateArgs(tool, args) {
+  const schema = tool.parameters || {};
+  const required = schema.required || [];
+  const allowed = Object.keys(schema.properties || {});
+  const given = Object.keys(args || {});
+
+  const missing = required.filter((k) => args?.[k] === undefined || args?.[k] === null);
+  if (missing.length) {
+    return `Missing required argument${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}. Call ${tool.name} again with ${missing.join(", ")}.`;
+  }
+  if (allowed.length) {
+    const unknown = given.filter((k) => !allowed.includes(k));
+    if (unknown.length) {
+      return `Unknown argument${unknown.length === 1 ? "" : "s"} for ${tool.name}: ${unknown.join(", ")}. Allowed: ${allowed.join(", ")}.`;
+    }
+  }
+  return null;
 }
 
 /* ──────────────────────────────── agent ────────────────────────────────── */
@@ -113,13 +172,41 @@ export function describeCall(name, args) {
  * @param {(event: object) => void} [opts.onEvent] live progress for the UI
  */
 export async function runAgent({ sessionId, text, attachments = [], channel = "web", target = "", onEvent = () => {} }) {
+  const startedAt = Date.now();
   const session = loadSession(sessionId);
-  const history = session.messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .slice(-24)
-    .map((m) => ({ role: m.role, content: m.content }));
+  const recent = session.messages.filter((m) => m.role === "user" || m.role === "assistant").slice(-24);
+  // Only the last attachment-bearing message keeps its excerpt; older ones keep
+  // the one-line "you attached X" note, which is enough to answer follow-ups
+  // without carrying 2 KB of document per turn.
+  const lastAttached = recent.map((m) => Boolean(m.attachments?.length)).lastIndexOf(true);
+  const history = recent.map((m, i) => {
+    if (!m.attachments?.length) return { role: m.role, content: m.content };
+    const names = m.attachments.map((a) => `${a.name} (${a.kind})`).join(", ");
+    const note = `[attached: ${names}]`;
+    return { role: m.role, content: i === lastAttached && m.excerpt ? `${m.content}\n\n${note}\n${m.excerpt}` : `${m.content}\n\n${note}` };
+  });
 
-  appendMessage(sessionId, { role: "user", content: text });
+  // The document itself lives for one turn (it is in memory, not on disk), but
+  // the *fact* that it was attached has to outlive it: "and what was the total
+  // on page 2?" was unanswerable because the next turn saw only the typed text.
+  // A bounded excerpt, not the whole file, so history stays history-sized.
+  const attached = attachments.map((a) => ({
+    name: a.name,
+    kind: a.kind,
+    bytes: a.bytes,
+    chars: (a.text || "").length,
+    images: (a.images || []).length,
+  }));
+  appendMessage(sessionId, {
+    role: "user",
+    content: text,
+    // Plain extracted text, never the <untrusted-document> wrapper: a stale
+    // wrapper replayed into history would look like a live attachment and would
+    // still be carrying its "this is data" preamble three turns later.
+    ...(attached.length
+      ? { attachments: attached, excerpt: attachments.map((a) => a.text || "").join("\n").slice(0, 2000) }
+      : {}),
+  });
 
   // Attached files become a labelled block ahead of the question, and images
   // travel with the message itself for a vision-capable model. The wrapper is
@@ -138,9 +225,13 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
   const trace = [];
   const toolOutputs = [];
   let finalText = "";
+  let rounds = 0;
+  let tokens = 0;
+  let toolBudget = TOOL_OUTPUT_BUDGET;
   const ctx = { channel, target: addressFor(channel, target), sessionId };
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    rounds = round + 1;
     onEvent({ type: "status", message: round === 0 ? "thinking" : "thinking again" });
 
     let out;
@@ -163,6 +254,8 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
       break;
     }
 
+    tokens += out.tokens || 0;
+
     if (!out.toolCalls?.length) {
       finalText = (out.content || "").trim() || "(The model returned an empty reply.)";
       break;
@@ -182,8 +275,20 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
         continue;
       }
 
+      // A call the model malformed is not the human's decision to make, so it
+      // is answered before the approval gate — and before the tool runs.
+      const invalid = call.parseError
+        ? `Your arguments were not valid JSON (${call.parseError}). Re-emit ${call.name} with valid JSON.`
+        : validateArgs(tool, call.arguments);
+      if (invalid) {
+        messages.push({ role: "tool", name: call.name, toolCallId: call.id, content: invalid });
+        trace.push({ tool: tool.name, args: call.arguments, ok: false, invalid: true });
+        onEvent({ type: "tool_done", name: tool.name, ok: false, preview: invalid.slice(0, 200) });
+        continue;
+      }
+
       if (DANGEROUS.has(tool.name) && !config.autoApprove) {
-        const { id, promise } = createApproval({ channel, description: label });
+        const { id, promise } = createApproval({ channel, sessionId, description: label });
         onEvent({ type: "approval", id, description: label });
         const allowed = await promise;
         if (!allowed) {
@@ -210,14 +315,23 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
         };
       }
 
-      toolOutputs.push(String(result.output));
-      trace.push({ tool: tool.name, args: call.arguments, ok: result.ok, output: String(result.output).slice(0, 400) });
-      onEvent({ type: "tool_done", name: tool.name, ok: result.ok, preview: String(result.output).slice(0, 300) });
+      // Per call it was already capped at 12 000 chars; eight rounds of eight
+      // calls could still push ~750 KB into one context. The budget is per
+      // turn, and when it runs out the model is told why rather than fed a
+      // silently truncated wall of text.
+      const raw = String(result.output ?? "");
+      const room = Math.max(0, toolBudget);
+      const kept = raw.slice(0, Math.min(12_000, room));
+      toolBudget -= kept.length;
+      const content = kept.length < raw.length
+        ? `${kept}\n\n[output truncated — ${raw.length - kept.length} characters not shown; the per-turn tool output budget is ${TOOL_OUTPUT_BUDGET} characters]`
+        : kept;
 
-      messages.push({
-        role: "tool", name: call.name, toolCallId: call.id,
-        content: String(result.output ?? "").slice(0, 12_000),
-      });
+      toolOutputs.push(kept);
+      trace.push({ tool: tool.name, args: call.arguments, ok: result.ok, output: kept.slice(0, 400) });
+      onEvent({ type: "tool_done", name: tool.name, ok: result.ok, preview: kept.slice(0, 300) });
+
+      messages.push({ role: "tool", name: call.name, toolCallId: call.id, content });
     }
   }
 
@@ -229,7 +343,7 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
 
   // Post-hoc honesty check: does the reply match what actually happened?
   let guard = { flags: [], clean: true };
-  if (!cfg.disableGuard && !/^🦞 My brain is unreachable/.test(finalText)) {
+  if (!config.disableGuard && !/^🦞 My brain is unreachable/.test(finalText)) {
     guard = auditReply({
       reply: finalText,
       trace,
@@ -248,7 +362,22 @@ export async function runAgent({ sessionId, text, attachments = [], channel = "w
   }
 
   appendMessage(sessionId, { role: "assistant", content: finalText, trace, guard: guard.flags });
-  return { text: finalText, trace, sessionId, guard: guard.flags };
+
+  const ms = Date.now() - startedAt;
+  record({
+    kind: "turn",
+    sessionId,
+    channel,
+    provider: config.llm.provider,
+    ms,
+    rounds,
+    tokens,
+    tools: trace.length,
+    guardFlags: guard.flags.length,
+    error: /^🦞 My brain is unreachable/.test(finalText) ? "brain-unreachable" : null,
+  });
+
+  return { text: finalText, trace, sessionId, guard: guard.flags, ms };
 }
 
 /* ──────────────────────────── one-shot helper ──────────────────────────── */

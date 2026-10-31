@@ -158,7 +158,14 @@ test("an attachment id is single-use: the next message does not carry it", async
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ text: "second", attachments: [info.id] }),
   })).text();
-  assert.doesNotMatch(JSON.stringify(received[0]), /SENTINEL-ONE-TIME-VALUE/, "replaying an id must not replay the file");
+
+  const body = JSON.stringify(received[0]);
+  // The id must not resurrect the file as a live attachment: no untrusted
+  // document block is built for this turn.
+  assert.doesNotMatch(body, /<untrusted-document>/, "replaying an id must not replay the file");
+  // The text may, however, still be present as *history* — that is the fix for
+  // "and what did the document say?", and it is clearly labelled as such.
+  assert.match(body, /\[attached: once\.txt \(text\)\]/, "the earlier attachment is not marked as history");
 });
 
 test("an oversized upload is refused with 413, not accepted and truncated", async () => {

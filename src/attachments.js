@@ -29,6 +29,7 @@
  * PDF and DOCX both need only `node:zlib`, which is why they are in scope and
  * `.doc`, `.xls` and scanned PDFs are not.
  */
+import { randomBytes } from "node:crypto";
 import { inflateRawSync, inflateSync } from "node:zlib";
 
 /** A single upload may not exceed this. Bigger than any document a person
@@ -424,25 +425,39 @@ export function clip(text, budget) {
  */
 const pending = new Map();
 
-export function putAttachment(record) {
+/**
+ * Queue a record for one owner.
+ *
+ * The queue was process-global: eight uploads from any client evicted another
+ * client's pending file, and `takeAttachments` would hand over any id the
+ * caller presented. Ids carry a millisecond timestamp, which is guessable, so
+ * the only thing standing between two people on the same Wi-Fi and each
+ * other's documents was the obfuscation. An owner key is not a security
+ * boundary — the process is — but it stops the accidents, which is what this
+ * was actually failing at.
+ */
+export function putAttachment(record, owner = "shared") {
   const now = Date.now();
   for (const [id, entry] of pending) if (now - entry.createdAt > TTL_MS) pending.delete(id);
   if (pending.size >= MAX_PENDING) {
     const oldest = [...pending.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)[0];
     if (oldest) pending.delete(oldest[0]);
   }
-  const id = `att_${now.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-  pending.set(id, { ...record, id, createdAt: now });
+  const id = `att_${now.toString(36)}_${randomBytes(9).toString("base64url")}`;
+  pending.set(id, { ...record, id, owner, createdAt: now });
   return id;
 }
 
 /** Pull the records for a list of ids, consuming them. Unknown ids are ignored
  *  rather than fatal: an expired attachment should not fail the message. */
-export function takeAttachments(ids) {
+export function takeAttachments(ids, owner = "shared") {
   const out = [];
   for (const id of Array.isArray(ids) ? ids.slice(0, MAX_PENDING) : []) {
     const entry = pending.get(String(id));
-    if (!entry) continue;
+    // Someone else's id is indistinguishable from an expired one: both are
+    // ignored rather than reported, because "that id exists but is not yours"
+    // is itself information.
+    if (!entry || (entry.owner || "shared") !== owner) continue;
     pending.delete(String(id));
     out.push(entry);
   }

@@ -5,7 +5,7 @@
  * back the same behaviour: approvals, agent turn, chunked reply. That is why
  * Pinch behaves identically in Telegram, Discord, Slack, WhatsApp and web.
  */
-import { runAgent, answerApproval, answerApprovalByChannel, pendingApprovals } from "../agent.js";
+import { runAgent, answerApproval, answerApprovalFor, pendingApprovalsFor } from "../agent.js";
 import { config } from "../config.js";
 
 const YES = /^(y|yes|yeah|yep|ok|okay|allow|approve|go|do it|sure)\.?!?$/i;
@@ -49,15 +49,16 @@ export async function routeMessage({ channel, text, send, sessionId, target = ""
   const trimmed = String(text || "").trim();
   if (!trimmed) return { handled: false };
 
-  // 1) Is this a reply to a permission prompt?
-  if (pendingApprovals(channel).length) {
+  // 1) Is this a reply to a permission prompt? Scoped to this conversation:
+  //    two chats behind one bot are two "telegram" channels to a channel check.
+  if (pendingApprovalsFor(sessionId || `${channel}-main`).length) {
     if (YES.test(trimmed)) {
-      answerApprovalByChannel(channel, true);
+      answerApprovalFor({ sessionId: sessionId || `${channel}-main`, channel }, true);
       await send("🦞 Allowed. On it.");
       return { handled: true, kind: "approval" };
     }
     if (NO.test(trimmed)) {
-      answerApprovalByChannel(channel, false);
+      answerApprovalFor({ sessionId: sessionId || `${channel}-main`, channel }, false);
       await send("🦞 Denied — I'll leave that alone. What would you rather I do?");
       return { handled: true, kind: "approval" };
     }
@@ -83,7 +84,7 @@ export async function routeMessage({ channel, text, send, sessionId, target = ""
   }
 
   if (/^\/status\b/i.test(trimmed)) {
-    const pending = pendingApprovals(channel);
+    const pending = pendingApprovalsFor(sessionId || `${channel}-main`);
     await send(
       `🦞 **Status**\n` +
         `Brain: ${config.llm.provider} / ${config.llm.provider === "ollama" ? config.llm.ollamaModel : config.llm.openaiModel}\n` +
