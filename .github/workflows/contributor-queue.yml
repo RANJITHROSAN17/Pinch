@@ -58,7 +58,7 @@ jobs:
         id: validate
         env:
           # Inputs reach the shell only here, never as ${{ }} inside run:.
-          DRY_RUN: ${{ inputs.dry_run }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           if [ ! -f .github/roadmap.json ]; then
@@ -66,7 +66,20 @@ jobs:
             exit 1
           fi
           node scripts/validate-roadmap.js .github/roadmap.json
-          echo "dry_run=${DRY_RUN:-true}" >> "$GITHUB_OUTPUT"
+
+          # On a schedule there is no `inputs` context, so an empty value must mean LIVE.
+          # Defaulting this to true made every scheduled run a no-op that reported success -
+          # a bot that looks alive and never files anything. workflow_dispatch may still opt
+          # into a dry run explicitly, and a local rehearsal can force one via env.
+          if [ -n "${DRY_RUN_INPUT:-}" ]; then
+            DRY_RUN="${DRY_RUN_INPUT}"
+          elif [ -n "${CONTRIBUTOR_QUEUE_DRY_RUN:-}" ]; then
+            DRY_RUN="${CONTRIBUTOR_QUEUE_DRY_RUN}"
+          else
+            DRY_RUN="false"
+          fi
+          echo "dry_run=${DRY_RUN}" >> "$GITHUB_OUTPUT"
+          echo "**dry run:** ${DRY_RUN}" >> "$GITHUB_STEP_SUMMARY"
 
       # ── 1. what is already open? ──────────────────────────────────────────────
       - name: Count the open curated queue
@@ -79,8 +92,26 @@ jobs:
             --json number,title,body,labels > /tmp/open.json
 
           # Curated = a bot-created issue carrying the marker, or one we labelled ourselves.
+          # Curated = an issue this bot opened, identified by the hidden marker. Counting
+          # the path is deliberate: a lenient selector would also count a human's issue that
+          # merely mentions the marker in prose, and the cap would then block filing for the
+          # wrong reason.
           CURATED="$(jq '[.[] | select((.body // "") | contains("<!-- roadmap:"))] | length' /tmp/open.json)"
-          EASY="$(jq '[.[] | select((.body // "") | contains("<!-- roadmap:")) | select([.labels[].name] | index("difficulty/easy"))] | length' /tmp/open.json)"
+
+          # Difficulty is read from the marker id + the manifest, NOT from a label: the bot
+          # only applies the labels listed in meta.created_labels, and if someone authorises
+          # `difficulty/easy` in a manifest entry the old label-based count read 0 while three
+          # easy issues were open - so the cap never bit and the queue could grow unbounded.
+          EASY="$(jq -r --slurpfile open /tmp/open.json '
+            [ .items[]
+              | select(.difficulty == "easy")
+              | select(.status == "ready" or .status == "filed" or .status == "shipped")
+              | .id as $id
+              | select(
+                  ([$open[0][] | select((.body // "") | contains("<!-- roadmap:" + $id + " -->"))] | length) > 0
+                )
+              | $id
+            ] | length' .github/roadmap.json)"
           echo "curated=${CURATED}" >> "$GITHUB_OUTPUT"
           echo "easy=${EASY}" >> "$GITHUB_OUTPUT"
           echo "**open curated queue:** ${CURATED} (easy: ${EASY})" >> "$GITHUB_STEP_SUMMARY"
@@ -103,7 +134,6 @@ jobs:
           fi
 
           # First ready item whose marker is not already open.
-          N="$(jq '[.[] | select(.body // "" | test("<!-- roadmap:"))] | length' /tmp/open.json)"
           ITEM="$(jq -c --slurpfile open /tmp/open.json '
             [ .items[] | select(.status == "ready") ]
             | map(select(

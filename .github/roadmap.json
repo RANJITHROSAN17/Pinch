@@ -18,7 +18,7 @@
     {
       "id": "pinch-001-document-doctor",
       "title": "docs: document the doctor and brain commands that already exist",
-      "status": "ready",
+      "status": "shipped",
       "difficulty": "easy",
       "labels": ["documentation", "good first issue"],
       "time_estimate": "~1-2 hours",
@@ -29,7 +29,7 @@
     {
       "id": "pinch-002-symlink-escape-test",
       "title": "test(security): prove resolveInWorkspace() refuses a symlink escape",
-      "status": "ready",
+      "status": "shipped",
       "difficulty": "easy",
       "labels": ["security", "good first issue"],
       "time_estimate": "~2-3 hours",
@@ -40,7 +40,7 @@
     {
       "id": "pinch-003-cli-smoke-test",
       "title": "test(cli): cover --version and an unknown verb in a smoke test",
-      "status": "ready",
+      "status": "shipped",
       "difficulty": "easy",
       "labels": ["good first issue"],
       "time_estimate": "~2-3 hours",
