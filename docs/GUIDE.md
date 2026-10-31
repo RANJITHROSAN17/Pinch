@@ -199,6 +199,8 @@ Installs only when you ask. `systemctl stop pinch` and it is gone; `data/` and `
 | `pinch chat` / `pinch ask "…"` | terminal use, same brain, same memory |
 | `pinch pair` | phone URL + locally-generated QR |
 | `pinch supervise` | restart-on-crash wrapper |
+| `pinch growth` | what to build next, measured from this checkout |
+| `pinch help` / `pinch --version` | the command list / the installed version |
 | `pinch service --install` | boot-time service |
 | `npm run demo` | run everything with a mock brain |
 | `npm run audit` | **self-check** — run the adversarial probes against your own install |

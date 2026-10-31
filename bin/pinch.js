@@ -15,6 +15,7 @@
  *   pinch radar        what has drifted: runtime, CI, pinned actions
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -104,6 +105,10 @@ switch (command) {
     run("src/cli.js", ["ask", text]);
     break;
   }
+  case "-v":
+  case "--version":
+    console.log(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
+    break;
   case "help":
   case "-h":
   case "--help":
