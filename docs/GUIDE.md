@@ -291,6 +291,20 @@ Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
 
 Full list with comments: [`.env.example`](../.env.example).
 
+### When something is wrong
+
+Two commands ship with Pinch and change nothing:
+
+- `npm run doctor` reads `.env` and calls each service you configured: your model
+  (Ollama reachable and the model pulled, or the OpenAI key set), the Telegram,
+  Discord and Slack tokens, the access key, and whether approvals are automatic.
+  Each line is ✔ ok, ▲ warning, ✖ failed or · skipped. It also prints the panel
+  URL, including your key. Without a `.env` it just tells you to run `npm run setup`.
+- `npm run brain` sends your model a short prompt and a calculator request, then
+  reports time to first token, full-reply time and whether it called a tool.
+  Exit code `0` means good to go, `1` the provider was unreachable or errored, and
+  `2` the model answered without a tool call (chat-only).
+
 ---
 
 ---
