@@ -9,10 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { join } from "node:path";
 const dataDir = mkdtempSync(join(tmpdir(), "pinch-sched-"));
 process.env.PINCH_DATA = dataDir;
 process.env.LLM_PROVIDER = "mock";
@@ -110,7 +107,7 @@ test("only due schedules are picked up", () => {
 
 test("an unattended run refuses dangerous tools instead of prompting", async () => {
   const { runAgent, pendingApprovals } = await import("../src/agent.js");
-  const { record, reset } = await import("../src/telemetry.js");
+  const { reset } = await import("../src/telemetry.js");
   reset();
 
   // The mock brain turns "run <cmd>" into a `shell` call, which is dangerous.
