@@ -111,10 +111,10 @@ test("S3: the approval description carries the argument value", async () => {
 
   // A safe argument is shown plainly, without the warning.
   const url = describeCall("open_url", { url: "https://example.com/docs" });
-  // includes(), not a regex: a regex tested against a URL is indistinguishable
-  // from URL sanitisation to a scanner, and this is an assertion, not a check.
-  assert.ok(url.includes("https://example.com/docs"), `value missing: ${url}`);
-  assert.ok(!url.includes("shell metacharacters"), `false warning: ${url}`);
+  // Exact equality: this is an assertion about a rendered string, not URL
+  // sanitisation — and a scanner cannot tell the difference from a substring
+  // test, so the test says exactly what it expects instead.
+  assert.equal(url, "open_url(url=https://example.com/docs)");
 });
 
 test("S3: a long argument is truncated but still attributable", async () => {
