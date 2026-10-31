@@ -251,10 +251,9 @@ async function waitFor(url, tries = 100) {
 
 before(async () => {
   pinchData = mkdtempSync(join(tmpdir(), "pinch-batch2-live-"));
-  pinchPort = await new Promise((resolve) => {
-    const probe = createServer();
-    probe.listen(0, "127.0.0.1", () => { const p = probe.address().port; probe.close(() => resolve(p)); });
-  });
+  const probe = createServer();
+  pinchPort = await listen(probe);
+  await new Promise((resolve) => probe.close(resolve));
   pinch = spawn(process.execPath, [join(ROOT, "src/index.js")], {
     cwd: ROOT,
     env: {
