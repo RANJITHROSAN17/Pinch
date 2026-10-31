@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "meta": {
+    "description": "Human-reviewed contributor queue. The bot reads this file and nothing else. Every entry is reviewed in a normal pull request, which is the point: an agent that decides at runtime what to build will duplicate, hallucinate, and file issues nobody can action.",
+    "owner": "RANJITHROSAN17",
+    "reply_sla_hours": 24,
+    "open_easy_cap": 3,
+    "created_labels": ["good first issue", "help wanted"],
+    "notes": [
+      "status: backlog    -> not eligible to be filed",
+      "status: ready      -> eligible; the bot may file it when the cap allows",
+      "status: filed      -> the bot created it; the marker lives in the issue body",
+      "status: shipped    -> the bot may comment + close its own issue, naming the release",
+      "Only entries with status=ready AND a complete body are ever filed."
+    ]
+  },
+  "items": [
+    {
+      "id": "pinch-001-document-doctor",
+      "title": "docs: document the doctor and brain commands that already exist",
+      "status": "ready",
+      "difficulty": "easy",
+      "labels": ["documentation", "good first issue"],
+      "time_estimate": "~1-2 hours",
+      "files": ["README.md", "docs/GUIDE.md"],
+      "verify": "node --test && node scripts/audit.js",
+      "body": "## Context\n\n`package.json` already ships `doctor` (`node scripts/setup.js --check`) and `brain` (`node scripts/braincheck.js`), and the README mentions neither. A newcomer with a misconfigured model has no documented way to diagnose it.\n\n## What to change\n\n- `README.md`: after the install block, add `npm run doctor` and `npm run brain`, one line each on what they check.\n- `docs/GUIDE.md`: add a \"When something is wrong\" subsection pointing at both.\n\nDocs only; do not touch `src/` or `scripts/`.\n\n## Acceptance criteria\n\n- [ ] `npm run doctor` appears in `README.md` and `docs/GUIDE.md`\n- [ ] Both are described from real output you ran yourself\n- [ ] `node --test` still passes\n\n## How to verify\n\n```bash\nnode scripts/setup.js --check\nnode scripts/braincheck.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. The \"Install it in two commands\" block near the top of `README.md`.\n2. The configuration section of `docs/GUIDE.md`.\n\n## Time estimate\n\n~1-2 hours."
+    },
+    {
+      "id": "pinch-002-symlink-escape-test",
+      "title": "test(security): prove resolveInWorkspace() refuses a symlink escape",
+      "status": "ready",
+      "difficulty": "easy",
+      "labels": ["security", "good first issue"],
+      "time_estimate": "~2-3 hours",
+      "files": ["test/hardening.test.js", "src/tools.js"],
+      "verify": "node --test test/hardening.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`src/tools.js:90` defines `resolveInWorkspace()`, and the README makes a security claim about it: files are confined to `PINCH_WORKSPACE` through `realpath()`, so a symlink cannot walk out. That claim has no targeted regression test.\n\nRun the case by hand first. If the guard does **not** hold, stop and report it privately per `SECURITY.md` instead of opening a public PR.\n\n## What to change\n\n- `test/hardening.test.js`: add a test that creates a temp workspace, plants a symlink pointing outside it, and asserts `resolveInWorkspace()` refuses the path.\n- Use `node:test` and `node:assert/strict`. No new dependencies.\n\n## Acceptance criteria\n\n- [ ] The test fails if `realpath()` confinement is removed (check by patching temporarily, then revert)\n- [ ] Temp directory cleaned up in a `finally` block\n- [ ] Passes on Node 22, 24 and 26\n- [ ] Test name states the guarantee, not the implementation\n\n## How to verify\n\n```bash\nnode --test test/hardening.test.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/tools.js:90` - `resolveInWorkspace()`, about 30 lines.\n2. `test/hardening.test.js` - copy the setup/teardown pattern from the nearest case.\n\n## Time estimate\n\n~2-3 hours."
+    },
+    {
+      "id": "pinch-003-cli-smoke-test",
+      "title": "test(cli): cover --version and an unknown verb in a smoke test",
+      "status": "ready",
+      "difficulty": "easy",
+      "labels": ["good first issue"],
+      "time_estimate": "~2-3 hours",
+      "files": ["test/cli.test.js", "bin/pinch.js"],
+      "verify": "node --test test/cli.test.js",
+      "body": "## Context\n\n`bin/pinch.js` is the entry point every user touches, and `scripts/growth.js` already carries a CLI-drift collector because promised verbs have drifted from implemented ones before. There is still no test that runs the CLI and asserts `--version` and an unknown verb behave sanely.\n\n## What to change\n\n- `test/cli.test.js` (new): via `node:child_process` `execFile` (argv array, never a shell string),\n  1. `--version` exits 0 and prints the `package.json` version;\n  2. an unknown verb exits non-zero or prints usage - assert whichever it does today and say which in the name;\n  3. `help` prints a usage line containing a real verb.\n\n## Acceptance criteria\n\n- [ ] No hard-coded version string; read it from `package.json`\n- [ ] `execFile` with an argv array\n- [ ] Passes on Node 22, 24, 26\n- [ ] `node --test` still fully green\n\n## How to verify\n\n```bash\nnode bin/pinch.js --version\nnode bin/pinch.js help\nnode bin/pinch.js nope; echo \"exit=$?\"\nnode --test test/cli.test.js\n```\n\n## Where to start\n\n1. `bin/pinch.js` - the verb `switch` and `usage()`.\n2. `test/tools.test.js` - the existing spawn style.\n\n## Time estimate\n\n~2-3 hours."
+    },
+    {
+      "id": "pinch-004-issue-chooser",
+      "title": "chore: add an issue-template chooser and a short PR template",
+      "status": "backlog",
+      "difficulty": "easy",
+      "labels": ["documentation", "good first issue"],
+      "time_estimate": "~1 hour",
+      "files": [".github/ISSUE_TEMPLATE/config.yml", ".github/PULL_REQUEST_TEMPLATE.md"],
+      "verify": "python3 -c \"import yaml;yaml.safe_load(open('.github/ISSUE_TEMPLATE/config.yml'))\"",
+      "body": "## Context\n\nGitHub only shows an issue chooser when `.github/ISSUE_TEMPLATE/config.yml` exists, so the community profile still reports `issue_template: None`. `pull_request_template` is also `None`.\n\n## What to change\n\n- Add `.github/ISSUE_TEMPLATE/config.yml` with three contact links: where to start, the private security path, discussions.\n- Add `.github/PULL_REQUEST_TEMPLATE.md` with three questions: what/why, does it touch a guard rail, and test+audit output.\n\n## Acceptance criteria\n\n- [ ] `config.yml` parses as YAML\n- [ ] Security link points at the private path in `SECURITY.md`, not a public form\n- [ ] PR template is short enough not to add friction to a repo that already gates on 256 tests\n- [ ] `community/profile` health reaches 100 after merge\n\n## How to verify\n\n```bash\npython3 -c \"import yaml;yaml.safe_load(open('.github/ISSUE_TEMPLATE/config.yml'))\"\ncurl -s https://api.github.com/repos/RANJITHROSAN17/Pinch/community/profile | grep health_percentage\n```\n\n## Where to start\n\n1. `.github/ISSUE_TEMPLATE/bug_report.yml` for the header style.\n2. `SECURITY.md` for the reporting URL.\n\n## Time estimate\n\n~1 hour."
+    },
+    {
+      "id": "pinch-005-npm-publish",
+      "title": "chore: prepare package.json for npm publish as pinch-ai",
+      "status": "backlog",
+      "difficulty": "medium",
+      "labels": ["help wanted"],
+      "time_estimate": "~2 hours",
+      "files": ["package.json", ".npmignore", "README.md"],
+      "verify": "npm pack --dry-run",
+      "body": "## Context\n\nThe only install path is `git clone`. `npm i -g pinch` resolves to an unrelated 2022 package, so the product name is unavailable on npm; `pinch-ai` is free.\n\n## What to change\n\n- `package.json`: `private: false`, `files` allowlist, `main`/`exports`, `publishConfig.access: public`.\n- `.npmignore` must exclude `data/`, `test/`, and `.env` explicitly.\n- `README.md`: offer `npx pinch-ai setup` as the first install path.\n\n## Acceptance criteria\n\n- [ ] `npm pack --dry-run` tarball contains no `data/`, no `.env`, no `test/`\n- [ ] Tarball under 1 MB\n- [ ] `npx` path documented and tested from a clean directory\n\n## How to verify\n\n```bash\nnpm pack --dry-run\nnpm pack && tar -tzf pinch-ai-*.tgz | grep -E '^(package/data|package/test|package/\\.env)' && echo LEAK || echo clean\n```\n\n## Where to start\n\n1. `package.json`\n2. `.gitignore` for the ignore patterns already known to be sensitive.\n\n## Time estimate\n\n~2 hours."
+    }
+  ]
+}
