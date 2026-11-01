@@ -285,11 +285,15 @@
         "chat with your files",
         "document q&a"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "search_web is network-only; there is no embedding store"
-      ]
+        "src/documents.js: bounded local passage index and lexical ranking, rebuilt per query",
+        "src/tools.js: search_documents registers file-and-line citations in the turn source registry",
+        "test/documents.test.js: retrieval, freshness, exclusions, limits, workspace policy and real-tool citation integration",
+        "docs/GUIDE.md: Search your documents — supported formats and honest limits"
+      ],
+      "note": "Offline lexical retrieval for text/Markdown/RST/CSV only. No embeddings, semantic matching, PDF/OCR or persistent vector store. Explicit folder; bounded scans report partial coverage."
     },
     {
       "id": "mcp",

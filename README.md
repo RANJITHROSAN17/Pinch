@@ -26,7 +26,7 @@
 <p align="center">
   <a href="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="tests" src="https://img.shields.io/badge/tests-344%20passing-4dd6c1" />
-  <img alt="tools" src="https://img.shields.io/badge/tools-22-ff8f6b" />
+  <img alt="tools" src="https://img.shields.io/badge/tools-23-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
@@ -143,7 +143,7 @@ The two files that decide whether you trust this with a shell are
 
 ## What's inside
 
-22 built-in tools. The five that change something ask permission first. Add your own from a JSON manifest — no code, and every call still asks.
+23 built-in tools. The five that change something ask permission first. Add your own from a JSON manifest — no code, and every call still asks.
 
 |  | Tools |
 |---|---|
