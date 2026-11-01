@@ -2,7 +2,7 @@
   <img src="./assets/banner.svg" width="100%" alt="Pinch — a personal AI assistant that lives on your own machine" />
 </p>
 
-<h1 align="center">🦞 Pinch</h1>
+<h1 align="center">🦞 Pinch — a local-first personal AI assistant</h1>
 
 <p align="center">
   <b>A personal AI assistant that runs on your own computer.</b><br/>
@@ -11,13 +11,37 @@
 </p>
 
 <p align="center">
+  <sub>
+    <b>Not the other Pinch projects.</b> This is a personal AI assistant. It is unrelated to
+    <code>pinchtab</code> (browser automation), <code>abhinav/pinch</code> (a Haskell serialisation
+    library), <code>Martin-Nyaga/pinch</code> (process-engineering pinch analysis),
+    <code>YoussefAbdelkawy/Pinch</code> (an Android widget) and Pinch Payments.
+  </sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-110%20passing-4dd6c1" />
-  <img alt="tools" src="https://img.shields.io/badge/tools-21-ff8f6b" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-344%20passing-4dd6c1" />
+  <img alt="tools" src="https://img.shields.io/badge/tools-22-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
 </p>
+
+## Facts
+
+| | |
+|---|---|
+| **Name** | Pinch |
+| **Kind** | Self-hosted personal AI assistant / agent gateway |
+| **Runs on** | Linux, macOS, Windows — Node.js 22+ |
+| **Model** | Local by default (Ollama); any OpenAI-compatible API optionally |
+| **Channels** | Telegram, Discord, Slack, WhatsApp, web panel (installable PWA) |
+| **Tools** | 22, five of which ask before they change anything |
+| **Runtime dependencies** | Zero |
+| **Licence** | MIT — free, no account, no subscription |
+| **Landing page** | https://ranjithrosan17.github.io/Pinch/ |
+| **Source** | [github.com/RANJITHROSAN17/Pinch](https://github.com/RANJITHROSAN17/Pinch) |
 
 ## Install it in two commands
 
@@ -57,7 +81,7 @@ npm run demo
 ## What it actually is
 
 - **An assistant that lives where your files are.** Not a chat window with a browser
-  plugin: it can read and write files, run commands, and search, up to 8 tool calls per turn.
+  plugin: it can read and write files, run commands, and search, up to 8 tool rounds per turn.
 - **Send it a file.** Drop a PDF, a screenshot or a spreadsheet on the panel and ask
   about it — extracted in-process, never uploaded anywhere. No OCR for scans, and it
   says so instead of pretending.
@@ -72,6 +96,16 @@ npm run demo
   keeping every path inside your workspace — so the worst case of a misjudgement is still a prompt.
 
 You message it like a person, and it works like a very fast intern who has your laptop.
+
+## How this is different
+
+| | Most self-hosted assistants | Pinch |
+|---|---|---|
+| Runtime dependencies | A tree of packages | **Zero** — the Node standard library |
+| Size | Tens of thousands of lines | **About 7,300**, readable before you hand it a shell |
+| Security posture | A policy document | **A published audit of itself**, unfixed findings included |
+| Approval gate | All-or-nothing | **Read-only commands are proven read-only** before they skip a prompt |
+| Default model | Their choice | **Yours**, local via Ollama |
 
 ## Ask it things like
 

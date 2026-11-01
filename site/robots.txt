@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ranjithrosan17.github.io/Pinch/sitemap.xml

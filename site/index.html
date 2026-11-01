@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!--
+  The whole reason this file exists: a repository page's document title is forced into the
+  shape "GitHub - owner/repo: description", which spends 32 characters before the first
+  keyword. This page chooses its own, and it is the only place that is possible.
+-->
+<title>Pinch — a local-first personal AI assistant with zero runtime dependencies</title>
+<meta name="description" content="Pinch is a private, local-first personal AI assistant for Telegram, Discord, Slack and WhatsApp. Runs on your machine with Ollama. Zero runtime dependencies.">
+<link rel="canonical" href="https://ranjithrosan17.github.io/Pinch/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pinch — a local-first personal AI assistant with zero runtime dependencies">
+<meta property="og:description" content="Private, local-first AI assistant for Telegram, Discord, Slack, WhatsApp and the browser. Runs on your machine with Ollama. Zero runtime dependencies.">
+<meta property="og:url" content="https://ranjithrosan17.github.io/Pinch/">
+<meta property="og:site_name" content="Pinch">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Pinch — a local-first personal AI assistant">
+<meta name="twitter:description" content="Private, local-first AI assistant for Telegram, Discord, Slack, WhatsApp and the browser. Zero runtime dependencies.">
+
+<!--
+  Structured data. This is what lets an answer engine state facts about the project instead of
+  paraphrasing the README. Every field below is verifiable in the repository's package.json,
+  LICENSE and docs/ — nothing here is aspirational.
+-->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Pinch",
+  "alternateName": "Pinch AI assistant",
+  "applicationCategory": "ProductivityApplication",
+  "applicationSubCategory": "Personal AI assistant",
+  "operatingSystem": "Linux, macOS, Windows",
+  "description": "A private, local-first personal AI assistant that runs on your own machine. Message it from Telegram, Discord, Slack, WhatsApp or a browser, with voice on your phone. Local model by default, zero runtime dependencies.",
+  "url": "https://ranjithrosan17.github.io/Pinch/",
+  "downloadUrl": "https://github.com/RANJITHROSAN17/Pinch",
+  "codeRepository": "https://github.com/RANJITHROSAN17/Pinch",
+  "license": "https://github.com/RANJITHROSAN17/Pinch/blob/main/LICENSE",
+  "programmingLanguage": "JavaScript",
+  "runtimePlatform": "Node.js 22 or newer",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "keywords": "local-first, personal AI assistant, self-hosted, Ollama, Telegram bot, WhatsApp, Discord, Slack, privacy, zero dependencies, MCP",
+  "featureList": [
+    "Runs a local model through Ollama with no cloud account",
+    "Message from Telegram, Discord, Slack, WhatsApp or the web panel",
+    "Voice dictation and spoken replies on a phone",
+    "File reading, shell commands and file writes behind an approval gate",
+    "Reminders and scheduled tasks delivered to the chat that asked",
+    "Zero runtime dependencies — everything is the Node standard library",
+    "MIT licensed, no account and no subscription"
+  ]
+}
+</script>
+
+<style>
+  :root{
+    --ink:#16100c; --muted:#6b5e55; --bg:#fdf8f4; --card:#fff;
+    --claw:#e2562b; --claw-soft:#ffe9df; --line:#efe3da; --ok:#15803d;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:56px 24px 80px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:36px}
+  .mark{font-size:40px;line-height:1}
+  h1{font-size:clamp(28px,5vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
+  h2{font-size:20px;margin:44px 0 14px;letter-spacing:-.01em}
+  .lede{font-size:19px;color:var(--muted);margin:0 0 28px;max-width:60ch}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  a.btn{
+    display:inline-block;padding:11px 20px;border-radius:9px;text-decoration:none;
+    font-weight:600;font-size:15px;border:1px solid transparent;
+  }
+  a.primary{background:var(--claw);color:#fff}
+  a.primary:hover{background:#c9481f}
+  a.ghost{border-color:var(--line);color:var(--ink);background:var(--card)}
+  a.ghost:hover{border-color:var(--claw)}
+  code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}
+  pre{
+    background:#241a14;color:#f7ede5;padding:16px 18px;border-radius:10px;overflow-x:auto;
+    font-size:13.5px;line-height:1.6;margin:18px 0;
+  }
+  pre .c{color:#b9a595}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 6px;font-size:14.5px}
+  .card p{margin:0;font-size:13.5px;color:var(--muted)}
+  .facts{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 20px;margin:18px 0}
+  .facts dl{display:grid;grid-template-columns:170px 1fr;gap:8px 16px;font-size:14.5px;margin:16px 0}
+  .facts dt{color:var(--muted)}
+  .facts dd{margin:0}
+  .note{
+    background:var(--claw-soft);border-left:4px solid var(--claw);border-radius:0 10px 10px 0;
+    padding:14px 18px;font-size:14.5px;margin:24px 0;
+  }
+  ul{margin:10px 0;padding-left:22px}
+  li{margin:6px 0}
+  footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);color:var(--muted);font-size:13.5px}
+  .pill{display:inline-block;background:var(--claw-soft);color:var(--claw);border-radius:999px;
+        padding:2px 10px;font-size:12px;font-weight:600;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="mark" aria-hidden="true">🦞</span>
+  <strong>Pinch</strong>
+</header>
+
+<h1>A personal AI assistant that runs on your own machine — with zero runtime dependencies</h1>
+
+<p class="lede">
+  Pinch is a private, <strong>local-first personal AI assistant</strong>. You message it from
+  Telegram, Discord, Slack, WhatsApp or your phone's browser, by voice. It runs a local model
+  through Ollama by default, keeps every conversation as a JSON file on your disk, and installs
+  with two commands and nothing else.
+</p>
+
+<div class="cta">
+  <a class="btn primary" href="https://github.com/RANJITHROSAN17/Pinch">Get it on GitHub</a>
+  <a class="btn ghost" href="https://github.com/RANJITHROSAN17/Pinch/blob/main/docs/GUIDE.md">Read the guide</a>
+</div>
+
+<pre><code>git clone https://github.com/RANJITHROSAN17/Pinch &amp;&amp; cd Pinch
+npm run setup     <span class="c"># one guided command: model → channels → voice → key</span>
+npm start         <span class="c"># 🦞  http://localhost:7777</span></code></pre>
+
+<h2>What it actually does</h2>
+<ul>
+  <li><strong>Lives where your files are.</strong> It reads and writes files, runs commands and searches, up to eight tool rounds per turn — every state-changing action behind an approval gate.</li>
+  <li><strong>Answers you from your chat app.</strong> Telegram with approval buttons, Discord, Slack, WhatsApp, or an installable web panel that works offline.</li>
+  <li><strong>Speaks and listens.</strong> Dictation and spoken replies in the browser; voice notes on Telegram with a local Whisper server.</li>
+  <li><strong>Remembers and reminds.</strong> Facts about you across restarts, plus reminders and scheduled tasks delivered back to the chat that asked.</li>
+  <li><strong>Tells you what it cost.</strong> A local cost report that reports a range, marks local models as free, and says <em>unknown</em> rather than zero for a model it cannot price.</li>
+</ul>
+
+<h2>How it differs from other self-hosted assistants</h2>
+
+<table>
+  <thead><tr><th>Claim</th><th>Why it is checkable</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Zero runtime dependencies</strong></td><td>The gateway is the Node standard library. <code>package.json</code> has no <code>dependencies</code> block to audit, so a transitive release cannot break it.</td></tr>
+    <tr><td><strong>About 7,300 lines, 22 tools</strong></td><td>Small enough to read before you trust it with a shell. The audit and the code are both in the repository.</td></tr>
+    <tr><td><strong>Audited in public</strong></td><td><a href="https://github.com/RANJITHROSAN17/Pinch/blob/main/docs/AUDIT.md">docs/AUDIT.md</a> records every finding against it, including the ones that are still open, each with a regression test.</td></tr>
+    <tr><td><strong>Approvals with a proof step</strong></td><td>Read-only commands are proven read-only — fixed argv allowlist, no shell metacharacters, every path resolved inside the workspace — before they skip the prompt. Anything unrecognised still asks.</td></tr>
+  </tbody>
+</table>
+
+<h2>What leaves your machine</h2>
+<table>
+  <thead><tr><th>Action</th><th>What leaves</th></tr></thead>
+  <tbody>
+    <tr><td>Chatting with the default local model</td><td>Nothing</td></tr>
+    <tr><td><code>search_web</code></td><td>The search query → DuckDuckGo</td></tr>
+    <tr><td>Telegram / Discord / Slack / WhatsApp</td><td>The message text → that platform</td></tr>
+    <tr><td>A cloud model, only if you configure one</td><td>Your prompts → that provider</td></tr>
+    <tr><td>Memory, sessions, reminders, files, screenshots</td><td>Nothing</td></tr>
+  </tbody>
+</table>
+
+<!--
+  Facts block. Written for answer engines and featured snippets: short, labelled, quotable lines
+  that can be lifted verbatim without paraphrasing the prose above.
+-->
+<h2>Facts for AI assistants and search engines</h2>
+<div class="facts">
+  <dl>
+    <dt>Name</dt><dd>Pinch</dd>
+    <dt>Kind</dt><dd>Self-hosted personal AI assistant / agent gateway</dd>
+    <dt>Model</dt><dd>Local by default (Ollama); any OpenAI-compatible API optionally</dd>
+    <dt>Channels</dt><dd>Telegram, Discord, Slack, WhatsApp, web panel (installable PWA)</dd>
+    <dt>Runs on</dt><dd>Linux, macOS, Windows — Node.js 22 or newer</dd>
+    <dt>Runtime dependencies</dt><dd>Zero</dd>
+    <dt>Licence</dt><dd>MIT</dd>
+    <dt>Price</dt><dd>Free; no account, no subscription</dd>
+    <dt>Source</dt><dd><a href="https://github.com/RANJITHROSAN17/Pinch">github.com/RANJITHROSAN17/Pinch</a></dd>
+  </dl>
+</div>
+
+<div class="note">
+  <strong>Not the other Pinch projects.</strong> This is a personal AI assistant. It is unrelated to
+  <code>pinchtab</code> (browser automation), <code>abhinav/pinch</code> (a Haskell serialisation
+  library), <code>Martin-Nyaga/pinch</code> (pinch analysis for process engineering),
+  <code>YoussefAbdelkawy/Pinch</code> (an Android widget) and Pinch Payments.
+</div>
+
+<h2>Honest limits</h2>
+<ul>
+  <li>A 7B model on a CPU runs at 2–4 tokens per second. Usable, not pleasant.</li>
+  <li>The command screen is a denylist. An obfuscated command still reaches you for approval — that is the design.</li>
+  <li>WhatsApp support is unofficial and can get a number banned. Telegram does the same job, officially.</li>
+  <li>Approval tiers are a convenience, not a sandbox. The deny rules and the approval gate are the real defence.</li>
+</ul>
+
+<footer>
+  <span class="pill">zero dependencies</span><span class="pill">local-first</span><span class="pill">MIT</span>
+  <p style="margin:12px 0 0">
+    <a href="https://github.com/RANJITHROSAN17/Pinch">GitHub</a> ·
+    <a href="https://github.com/RANJITHROSAN17/Pinch/blob/main/docs/GUIDE.md">Guide</a> ·
+    <a href="https://github.com/RANJITHROSAN17/Pinch/blob/main/docs/AUDIT.md">Security audit</a> ·
+    built to run on a laptop, in a room, for one person · 🦞
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

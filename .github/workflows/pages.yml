@@ -1,0 +1,55 @@
+name: Deploy landing page
+
+# GitHub Pages is configured with build_type "workflow", which means nothing deploys until a
+# workflow actually does it. There wasn't one, so https://ranjithrosan17.github.io/Pinch/ has
+# been serving a 404 since it was enabled.
+#
+# This publishes site/ and nothing else. The application itself is never deployed — Pinch is
+# a program you run on your own machine, and putting a personal assistant on a public URL
+# would be the opposite of the point.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# Every action below is pinned to a 40-char commit SHA, not a tag: test/roadmap.test.js
+# enforces this repo-wide for OpenSSF Scorecard, and a moving tag is how a build starts
+# running code nobody reviewed.
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify the page before publishing it
+        run: |
+          set -euo pipefail
+          test -f site/index.html || { echo "site/index.html is missing"; exit 1; }
+          # A landing page with no title or description is invisible to search engines, which
+          # is the entire purpose of this file existing.
+          grep -q "<title>" site/index.html || { echo "no <title>"; exit 1; }
+          grep -q 'name="description"' site/index.html || { echo "no meta description"; exit 1; }
+          grep -q "application/ld+json" site/index.html || { echo "no structured data"; exit 1; }
+          echo "landing page checks passed"
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
