@@ -30,6 +30,7 @@
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
+  <a href="https://github.com/pinchfoundry/Pinch/discussions"><img alt="discussions" src="https://img.shields.io/badge/discussions-open-ff6a4d?logo=github" /></a>
 </p>
 
 ## Facts
@@ -100,6 +101,26 @@ npm run demo
   keeping every path inside your workspace — so the worst case of a misjudgement is still a prompt.
 
 You message it like a person, and it works like a very fast intern who has your laptop.
+
+## How it works
+
+<p align="center">
+  <img src="./assets/architecture.svg" width="100%" alt="Five stages: channels, router, agent, risk and approval, guard — with a SQLite store, scheduler and MCP plugins on disk" />
+</p>
+
+Five stages, and only one of them can touch your machine:
+
+| Stage | What happens |
+| :--- | :--- |
+| **Channels** | Telegram, Discord, Slack, WhatsApp, or the browser panel by voice |
+| **Router** | Normalises the message and attaches any files you sent |
+| **Agent** | Plans the steps, calls tools, writes the answer |
+| **Risk + approval** | `read` commands run straight through; anything that could change state stops and asks you |
+| **Guard** | Checks the reply's claims and citations before it leaves, and flags what it had to drop |
+
+The two files that decide whether you trust this with a shell are
+[`src/risk.js`](src/risk.js) and [`src/guard.js`](src/guard.js). Both are short. Read them.
+
 
 ## How this is different
 

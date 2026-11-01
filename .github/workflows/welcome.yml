@@ -1,0 +1,92 @@
+name: Welcome
+
+# Greets a first-time contributor, once, on their first pull request or issue.
+#
+# Design rules, in order of how badly they matter:
+#
+#   1. NO NEW ACTIONS. Uses the `gh` CLI that ships on the runner, so this adds nothing to the
+#      supply chain and needs no entry in the org's restricted-actions allow-list.
+#   2. IT NEVER RUNS FORK CODE. `pull_request_target` runs with a write token, so we never check
+#      out the pull request's tree — we read metadata and post one comment. That is all.
+#   3. IT SPEAKS ONCE AND CANNOT BE TRICKED INTO REPEATING. GitHub's own `author_association`
+#      already knows who is new, so there is no state to keep.
+#   4. IT IS SHORT. A wall of text from a bot is exactly what our code of conduct warns against.
+
+on:
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: welcome-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  welcome:
+    name: Greet first-time contributor
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'pull_request_target' &&
+        (github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' ||
+         github.event.pull_request.author_association == 'FIRST_TIMER')) ||
+      (github.event_name == 'issues' &&
+        (github.event.issue.author_association == 'FIRST_TIME_CONTRIBUTOR' ||
+         github.event.issue.author_association == 'FIRST_TIMER'))
+
+    steps:
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KIND: ${{ github.event_name == 'pull_request_target' && 'pr' || 'issue' }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login || github.event.issue.user.login }}
+          ASSOC: ${{ github.event.pull_request.author_association || github.event.issue.author_association }}
+        run: |
+          set -euo pipefail
+
+          if [ "$ASSOC" = "FIRST_TIMER" ]; then
+            opener="Welcome, @$AUTHOR — this looks like your first contribution on GitHub at all."
+          else
+            opener="Welcome, @$AUTHOR — this is your first contribution here."
+          fi
+
+          if [ "$KIND" = "pr" ]; then
+            body="$opener
+
+            A few things, and then I'll get out of the way:
+
+            - **Two commands and you have it running locally:** \`npm run setup\`, then \`npm test\`. No dependency install — there are no dependencies.
+            - **Every fix needs a regression test.** Not ceremony: a bug that comes back once comes back again.
+            - **If this touches a guard rail** (approval gate, workspace confinement, citation check), say so in the description. CONTRIBUTING.md has the specific section.
+            - **A maintainer will reply within a day or two.** If it's quiet for longer, comment on the thread — that's a nudge, not a complaint.
+
+            If anything here is unclear, that's a bug in our docs. Say so and I'll take it as a signal to fix the guide."
+          else
+            body="$opener
+
+            Thanks for taking the time to write this up — an issue with a real reproduction is worth more than a patch.
+
+            - **If you're reporting a bug**, \`pinch doctor\` output and your OS/Node version save a round trip.
+            - **If it's a security problem**, close this and use the private advisory link instead. Please don't describe exploits in public.
+            - **If you'd like to fix it yourself**, say so and we'll label it. [CONTRIBUTING.md](https://github.com/$GH_REPO/blob/main/CONTRIBUTING.md) has the setup.
+
+            A maintainer will read this properly rather than skim it."
+          fi
+
+          printf '%s\n' "$body" | gh "$KIND" comment "$NUMBER" --body-file -
+
+      - name: Mark them visible
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          KIND: ${{ github.event_name == 'pull_request_target' && 'pr' || 'issue' }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: gh "$KIND" edit "$NUMBER" --add-label "first-time contributor"
