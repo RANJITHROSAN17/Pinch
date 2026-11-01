@@ -11,6 +11,8 @@ from zero to a running assistant.
 
 ## Contents
 
+- [Search your documents](#search-your-documents)
+
 - [Voice, on your phone](#voice-on-your-phone)
 - [Attaching files](#attaching-files)
 - [Reminders that actually fire](#reminders-that-actually-fire)
@@ -796,3 +798,37 @@ node --test     # 110 tests, must stay green
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ---
+
+## Search your documents
+
+Ask: **“Search my `notes` folder for the reimbursement ceiling, and cite the document.”**
+Pinch offers `search_documents` to the model. It takes an explicit workspace folder,
+query and optional result limit (1–8). It builds an in-memory passage index, ranks
+word matches, and returns excerpts with file paths and line ranges. Retrieved
+passages enter the existing per-turn source registry; answers can cite them as
+`[1]`. This is tool-assisted answering, not a guarantee that every model will use
+or correctly interpret the evidence. Ask it to search explicitly when needed.
+
+Everything stays on your device with the default local model. No embedding server,
+network request, database or additional dependency is required. If you deliberately
+use a cloud model, retrieved passages become part of that model's prompt.
+
+**Supported:** `.txt`, `.md`, `.markdown`, `.rst`, `.csv`. This is lexical retrieval,
+not semantic embeddings: use words present in your documents. PDF, DOCX, OCR and
+image extraction are not supported. A no-match result is not proof of absence.
+
+The index is rebuilt per query, so edited and deleted files do not leave stale
+copies. Nothing is persisted. Hidden files/directories, dependency/build trees,
+symlinks and binary-looking content are excluded. Every read uses the same
+workspace and protected-credential policy as file tools. Output is labelled
+untrusted: document text must not be followed as instructions. These are safeguards,
+not an OS sandbox or a complete prompt-injection defense; concurrent replacement
+of parent directories by another local process remains outside this guarantee.
+
+Scan budgets: 2,000 entries, eight directory levels, 256 KiB per file and 4 MiB
+in total. Passages cover up to 24 lines with excerpts capped at 4,000 characters.
+Limit hits to eight. When scan/size budgets omit content, output says **PARTIAL**;
+narrow the folder instead of treating the result as exhaustive. Skipped files are
+counted, including unreadable files. Indexing is bounded but runs in-process, so
+large folders can briefly delay the event loop; this is intended for small personal
+text collections, not enterprise-scale search.
