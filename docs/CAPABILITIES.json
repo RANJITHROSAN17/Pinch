@@ -362,7 +362,7 @@
     },
     {
       "id": "conversation-search",
-      "name": "Searches everything you have ever said to it",
+      "name": "Searches saved conversations across sessions",
       "keywords": [
         "search history",
         "conversation search",
@@ -370,11 +370,15 @@
         "chat history",
         "lookup previous"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/store.js: sessions are listed and loaded by id, never searched"
-      ]
+        "src/store.js: searchSessions(query, { limit }) scans saved session JSON, literal case-insensitive matches, newest-first bounded snippets",
+        "src/tools.js: read-only search_history tool, matched sessions registered as citable sources",
+        "test/batch2.test.js: multi-session matching, blank-query no-I/O, truncation, symlink confinement and real tool citations",
+        "docs/GUIDE.md: Search past conversations"
+      ],
+      "note": "Searches retained user/assistant text only, not deleted turns, tool output or system prompts. Sessions retain at most 200 messages; files over 2 MiB or unreadable/malformed files are skipped. No external dependency or persistent search index. All saved sessions share the existing single-owner trust boundary."
     },
     {
       "id": "export",

@@ -332,3 +332,155 @@ test("a document is still readable one turn later, marked as history", async () 
   assert.match(first.excerpt, /1,240\.00/, "the extracted text was not kept");
   assert.equal(first.attachments[0].name, "invoice.txt");
 });
+
+/* ───────────────────────── conversation search (#41) ──────────────────── */
+
+test("history: searches multiple sessions case-insensitively, newest turns first", async () => {
+  const { ensureData, searchSessions, sessionPath } = await import("../src/store.js");
+  const { writeFileSync } = await import("node:fs");
+  ensureData();
+  const files = ["history-old", "history-new"];
+  try {
+    writeFileSync(sessionPath(files[0]), JSON.stringify({ id: "../../not-the-id", messages: [
+      { role: "user", content: "We chose a Green Bicycle", at: "2025-01-01T00:00:00Z" },
+      { role: "assistant", content: "green bicycle noted", at: "2025-02-01T00:00:00Z" },
+      { role: "tool", content: "green bicycle", at: "2026-01-01T00:00:00Z" },
+    ] }));
+    writeFileSync(sessionPath(files[1]), JSON.stringify({ messages: [
+      { role: "user", content: "GREEN BICYCLE arrived", at: "2025-03-01T00:00:00Z" },
+    ] }));
+    const hits = searchSessions(" Green Bicycle ");
+    assert.deepEqual(hits.map((h) => h.sessionId), ["history-new", "history-old", "history-old"]);
+    assert.deepEqual(hits.map((h) => h.role), ["user", "assistant", "user"]);
+    assert.equal(hits[0].ts, "2025-03-01T00:00:00.000Z");
+    assert.equal(searchSessions("green bicycle", { limit: 1 }).length, 1);
+  } finally { for (const id of files) rmSync(sessionPath(id), { force: true }); }
+});
+
+test("history: empty queries perform no filesystem access", async () => {
+  const { searchSessions } = await import("../src/store.js");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const original = fs.lstatSync;
+  let calls = 0;
+  fs.lstatSync = () => { calls++; throw new Error("must not scan"); };
+  syncBuiltinESMExports();
+  try {
+    for (const q of ["", "  \n\t", null, undefined]) assert.deepEqual(searchSessions(q), []);
+    assert.equal(calls, 0);
+  } finally { fs.lstatSync = original; syncBuiltinESMExports(); }
+});
+
+test("history: snippets are bounded around matches and disk edits are immediately visible", async () => {
+  const { searchSessions, sessionPath } = await import("../src/store.js");
+  const { writeFileSync } = await import("node:fs");
+  const path = sessionPath("history-snippet");
+  try {
+    writeFileSync(path, JSON.stringify({ messages: [
+      { role: "user", content: "x".repeat(1000) + "needle41" + "y".repeat(1000), at: "invalid" },
+    ] }));
+    const hit = searchSessions("needle41")[0];
+    assert.ok(hit.snippet.length <= 240);
+    assert.match(hit.snippet, /needle41/);
+    assert.equal(hit.ts, null);
+    writeFileSync(path, "not JSON");
+    assert.deepEqual(searchSessions("needle41"), []);
+  } finally { rmSync(path, { force: true }); }
+});
+
+test("history: does not follow session symlinks or read sibling data", async (t) => {
+  const { searchSessions, sessionPath } = await import("../src/store.js");
+  const { writeFileSync, symlinkSync } = await import("node:fs");
+  const outside = join(dataDir, "history-outside.json");
+  const link = sessionPath("history-link");
+  writeFileSync(outside, JSON.stringify({ messages: [{ role: "user", content: "outside-secret41" }] }));
+  try {
+    try { symlinkSync(outside, link); } catch (err) {
+      if (err.code === "EPERM") { t.skip("symlinks require privilege on this platform"); return; }
+      throw err;
+    }
+    assert.deepEqual(searchSessions("outside-secret41"), []);
+  } finally { rmSync(link, { force: true }); rmSync(outside, { force: true }); }
+});
+
+test("history: rejects a symlinked sessions directory", async (t) => {
+  const { searchSessions } = await import("../src/store.js");
+  const { renameSync, symlinkSync } = await import("node:fs");
+  const dir = join(dataDir, "sessions"), backup = join(dataDir, "sessions-backup");
+  renameSync(dir, backup);
+  let linked = false;
+  try {
+    try { symlinkSync(backup, dir, process.platform === "win32" ? "junction" : "dir"); linked = true; }
+    catch (err) { if (err.code === "EPERM") { t.skip("symlink privilege unavailable"); return; } throw err; }
+    assert.deepEqual(searchSessions("first"), []);
+  } finally { if (linked) rmSync(dir); renameSync(backup, dir); }
+});
+
+test("history tool: read-only, citable, and does not expose tool/system messages", async () => {
+  const { sessionPath } = await import("../src/store.js");
+  const { writeFileSync } = await import("node:fs");
+  const { TOOL_MAP, DANGEROUS, toolSchemas } = await import("../src/tools.js");
+  const { createSources } = await import("../src/sources.js");
+  const path = sessionPath("history-citation");
+  try {
+    writeFileSync(path, JSON.stringify({ messages: [
+      { role: "user", content: "citation41: remember the launch", at: "2026-01-01T00:00:00Z" },
+      { role: "system", content: "citation41: internal instructions" },
+    ] }));
+    const tool = TOOL_MAP.get("search_history");
+    assert.equal(tool.dangerous, false);
+    assert.equal(DANGEROUS.has("search_history"), false);
+    assert.ok(toolSchemas().some((s) => s.function.name === "search_history"));
+    const sources = createSources();
+    const out = await tool.run({ query: "citation41" }, { sources });
+    assert.equal(out.ok, true);
+    assert.match(out.output, /<untrusted-source>/);
+    assert.match(out.output, /\[1\]/);
+    assert.doesNotMatch(out.output, /internal instructions/);
+    assert.equal(sources.items[0].ref, "session:history-citation");
+    assert.match(sources.items[0].snippet, /launch/);
+  } finally { rmSync(path, { force: true }); }
+});
+
+test("history: clamps result limits and skips oversized session files", async () => {
+  const { searchSessions, sessionPath } = await import("../src/store.js");
+  const { writeFileSync } = await import("node:fs");
+  const path = sessionPath("history-bounds");
+  try {
+    writeFileSync(path, JSON.stringify({ messages: Array.from({ length: 60 }, () => ({ role: "user", content: "bounded41", at: "2026-01-01T00:00:00Z" })) }));
+    assert.equal(searchSessions("bounded41").length, 10);
+    assert.equal(searchSessions("bounded41", { limit: 1000 }).length, 50);
+    assert.equal(searchSessions("bounded41", { limit: NaN }).length, 10);
+    writeFileSync(path, JSON.stringify({ messages: [{ role: "user", content: "bounded41" + "x".repeat(2 * 1024 * 1024) }] }));
+    assert.deepEqual(searchSessions("bounded41"), []);
+  } finally { rmSync(path, { force: true }); }
+});
+
+test("history: replacement during open cannot expose an outside session", async (t) => {
+  const { searchSessions, sessionPath } = await import("../src/store.js");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const inside = sessionPath("history-race");
+  const outside = join(dataDir, "outside-race.json");
+  fs.writeFileSync(inside, JSON.stringify({ messages: [] }));
+  fs.writeFileSync(outside, JSON.stringify({ messages: [{ role: "user", content: "raced-secret41" }] }));
+  const original = fs.openSync;
+  let replaced = false;
+  fs.openSync = (path, ...args) => {
+    if (path === inside && !replaced) {
+      fs.unlinkSync(inside);
+      try { fs.symlinkSync(outside, inside); replaced = true; }
+      catch (err) { if (err.code === "EPERM") { t.skip("symlink privilege unavailable"); } else throw err; }
+    }
+    return original(path, ...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.deepEqual(searchSessions("raced-secret41"), []);
+  } finally {
+    fs.openSync = original;
+    syncBuiltinESMExports();
+    rmSync(inside, { force: true });
+    rmSync(outside, { force: true });
+  }
+});
