@@ -59,3 +59,30 @@ test("quotes and backslashes cannot exceed the header limit", () => {
   assert.ok(header.length <= 400);
   assert.ok(result.endsWith("body"));
 });
+
+
+test("only truncates a reply header when its serialized form exceeds the limit", () => {
+  const overhead = '[Replying to: ""]\n'.length;
+  const fits = "a".repeat(400 - overhead);
+  assert.equal(
+    formatIncomingTelegramText({ text: "body", reply_to_message: { text: fits } }),
+    `[Replying to: ${JSON.stringify(fits)}]\nbody`
+  );
+  const result = formatIncomingTelegramText({ text: "body", reply_to_message: { text: fits + "a" } });
+  const header = result.slice(0, result.indexOf("\n") + 1);
+  assert.equal(header.length, 400);
+  assert.match(header, /…"]\n$/);
+  assert.equal(result.slice(header.length), "body");
+});
+
+test("truncated headers remain valid JSON for escaped and supplementary characters", () => {
+  for (const reply of ['"'.repeat(1000), "\\".repeat(1000), "\u0000".repeat(1000), "🙂".repeat(1000)]) {
+    const result = formatIncomingTelegramText({ text: "untouched body", reply_to_message: { text: reply } });
+    const header = result.slice(0, result.indexOf("\n") + 1);
+    assert.ok(header.length <= 400);
+    const quote = JSON.parse(header.slice("[Replying to: ".length, -2));
+    assert.ok(quote.endsWith("…"));
+    assert.ok(reply.startsWith(quote.slice(0, -1)));
+    assert.equal(result.slice(header.length), "untouched body");
+  }
+});

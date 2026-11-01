@@ -55,6 +55,23 @@ test("telemetry is excluded unless asked for, because it is not 'your data'", ()
   assert.equal(withLog.counts.telemetryTurns, 1);
 });
 
+test("optional telemetry skips corrupt lines and preserves readable records", () => {
+  const path = join(dataDir, "telemetry.ndjson");
+  const previous = readFileSync(path, "utf8");
+  const record = { kind: "turn", model: "local-test", tokens: 12 };
+  try {
+    writeFileSync(path, `{not json}\n${JSON.stringify(record)}\n\n{broken too}\n`);
+    const doc = buildExport({ includeTelemetry: true });
+    assert.deepEqual(doc.telemetry, [record]);
+    assert.equal(doc.counts.telemetryTurns, 1);
+    assert.equal(buildExport().telemetry, null);
+    rmSync(path);
+    assert.deepEqual(buildExport({ includeTelemetry: true }).telemetry, []);
+  } finally {
+    writeFileSync(path, previous);
+  }
+});
+
 test("an export never contains .env, keys, or the config object", () => {
   const json = JSON.stringify(buildExport({ includeTelemetry: true }));
   for (const leak of ["PINCH_KEY", "OPENAI_API_KEY", "TELEGRAM_TOKEN", ".env", "apiKey"]) {

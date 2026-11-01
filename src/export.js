@@ -23,15 +23,6 @@ import { loadMemory, loadReminders, loadSchedules, listSessions, loadSession } f
 
 export const EXPORT_VERSION = 1;
 
-/** Read a JSON file, or return a fallback. A corrupt file must not abort an export. */
-function readJson(path, fallback) {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return fallback;
-  }
-}
-
 /**
  * Build the export as a plain object. Pure with respect to the filesystem: it
  * reads, sorts, and returns. Writing is the caller's job.
