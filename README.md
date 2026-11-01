@@ -245,3 +245,7 @@ Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUD
 <p align="center">
   <sub>MIT licensed · built to run on a laptop, in a room, for one person</sub>
 </p>
+
+## Maintainer
+
+**[Ranjith Rosan](https://github.com/RANJITHROSAN17)** maintains Pinch with its open-source contributors. Pinch is a local-first personal AI assistant published by [Pinch Foundry](https://github.com/pinchfoundry); see the [contributor history](https://github.com/pinchfoundry/Pinch/graphs/contributors) for everyone’s work.
