@@ -51,7 +51,7 @@ jobs:
           gh issue list --state all --limit 500 --json number,title,body,state > /tmp/all-issues.json
           node scripts/roadmap-bots.js status --issues-json /tmp/all-issues.json --out /tmp/status.md
 
-          EXISTING="$(jq -r '[.[] | select(.state == "open") | select((.body // "") | contains("<!-- roadmap-status -->"))] | .[0].number // empty' /tmp/all-issues.json)"
+          EXISTING="$(jq -r '[.[] | select((.state // "" | ascii_downcase) == "open") | select((.body // "") | contains("<!-- roadmap-status -->"))] | sort_by(.number) | .[0].number // empty' /tmp/all-issues.json)"
           if [ -n "$EXISTING" ]; then
             gh issue edit "$EXISTING" --title "🦞 Pinch Roadmap Status" --body-file /tmp/status.md
             echo "Updated rolling status issue #${EXISTING}" >> "$GITHUB_STEP_SUMMARY"
