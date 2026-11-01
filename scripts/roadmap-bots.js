@@ -254,7 +254,7 @@ export function checkWorkflows(repoRoot = ROOT) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [sub, ...rest] = process.argv.slice(2);
   if (sub === "status") {
-    const issuesFile = argValue(rest, "--issues-json");
+    const issuesFile = argValue(rest, "--issues-json") || argValue(rest, "--issues");
     const outFile = argValue(rest, "--out");
     const issues =
       issuesFile && existsSync(issuesFile)
