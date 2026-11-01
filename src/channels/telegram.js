@@ -4,7 +4,7 @@
  */
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
-import { answerApproval } from "../agent.js";
+import { answerApproval, pendingApprovalsFor } from "../agent.js";
 import { registerSender } from "../outbound.js";
 
 const API = (method) => `https://api.telegram.org/bot${config.telegram.token}/${method}`;
@@ -19,6 +19,35 @@ async function call(method, payload) {
   const json = await res.json();
   if (!json.ok) throw new Error(`${method}: ${json.description || "failed"}`);
   return json.result;
+}
+
+const MAX_REPLY_HEADER_CHARS = 400;
+
+/**
+ * Keep quoted Telegram replies with the new message while bounding how much
+ * untrusted quoted text enters the model context.
+ */
+export function formatIncomingTelegramText(msg, { preserveApprovalReply = false } = {}) {
+  const text = String(msg?.text || msg?.caption || "");
+  if (preserveApprovalReply && /^(?:yes|no)[.!?]?$/i.test(text.trim())) return text;
+
+  const reply = msg?.reply_to_message?.text || msg?.reply_to_message?.caption;
+  if (typeof reply !== "string" || !reply.trim()) return text;
+
+  const prefix = "[Replying to: ";
+  const suffix = "]\\n";
+  const chars = Array.from(reply.trim().replace(/\\s+/g, " "));
+  let quote = chars.slice(0, MAX_REPLY_HEADER_CHARS);
+  let truncated = quote.length < chars.length;
+  let header = prefix + JSON.stringify(quote.join("") + (truncated ? "…" : "")) + suffix;
+
+  while (header.length > MAX_REPLY_HEADER_CHARS) {
+    quote.pop();
+    truncated = true;
+    header = prefix + JSON.stringify(quote.join("") + (truncated ? "…" : "")) + suffix;
+  }
+
+  return header + text;
 }
 
 function chunk(text, size = 4000) {
@@ -78,8 +107,8 @@ export function startTelegram(log = console) {
   async function handleMessage(msg) {
     const chatId = msg.chat.id;
     const userId = msg.from?.id;
-    const text = msg.text || msg.caption || "";
-    if (!text) {
+    const incomingText = msg.text || msg.caption || "";
+    if (!incomingText) {
       await send(chatId, "🦞 I can only read text for now. Voice notes are on the roadmap — use the web panel mic for talking.");
       return;
     }
@@ -94,12 +123,17 @@ export function startTelegram(log = console) {
       return;
     }
 
+    const sessionId = `telegram-${chatId}`;
+    const approvalReply = pendingApprovalsFor(sessionId).length > 0 &&
+      /^(?:yes|no)[.!?]?$/i.test(incomingText.trim());
+    const text = formatIncomingTelegramText(msg, { preserveApprovalReply: approvalReply });
+
     await call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
     try {
       await routeMessage({
         channel: "telegram",
         text,
-        sessionId: `telegram-${chatId}`,
+        sessionId,
         target: String(chatId),
         send: (t) => send(chatId, t),
         onProgress: async () => {
