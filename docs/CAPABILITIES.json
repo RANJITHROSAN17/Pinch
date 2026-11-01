@@ -285,11 +285,15 @@
         "chat with your files",
         "document q&a"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "search_web is network-only; there is no embedding store"
-      ]
+        "src/documents.js: bounded local passage index and lexical ranking, rebuilt per query",
+        "src/tools.js: search_documents registers file-and-line citations in the turn source registry",
+        "test/documents.test.js: retrieval, freshness, exclusions, limits, workspace policy and real-tool citation integration",
+        "docs/GUIDE.md: Search your documents — supported formats and honest limits"
+      ],
+      "note": "Offline lexical retrieval for text/Markdown/RST/CSV only. No embeddings, semantic matching, PDF/OCR or persistent vector store. Explicit folder; bounded scans report partial coverage."
     },
     {
       "id": "mcp",
@@ -322,13 +326,16 @@
         "tools api",
         "agent builder"
       ],
-      "status": "partial",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/tools.js: tools are a fixed list in this file",
-        "docs/GUIDE.md: 'adding a tool' section"
+        "pinch-tools.example.json: a JSON manifest entry is a tool — name, description, command, args",
+        "src/custom-tools.js: startCustomTools() resolves the executable, refuses anything inside the workspace, registers via registerTool() with dangerous:true",
+        "src/index.js: loaded before listen(), so the tool list is final before anything can ask for it",
+        "test/custom-tools.test.js: 'a model-supplied argument is data, never a shell' — the semicolon test",
+        "docs/GUIDE.md: 'Your own tools (no code required)' — the five guards and what is not supported"
       ],
-      "note": "Adding a tool means editing src/tools.js. Fine for one maintainer, a wall for anybody else."
+      "note": "Three ways in, none of which require editing src/tools.js: a JSON manifest for a command you already run (src/custom-tools.js), an MCP server for someone else's tools (src/mcp.js), and a built-in for contributors. Manifest tools are always behind the approval gate — there is no trusted-server opt-out, because the arguments come from the model rather than from code you can read first."
     },
     {
       "id": "scheduled-agents",
@@ -355,7 +362,7 @@
     },
     {
       "id": "conversation-search",
-      "name": "Searches everything you have ever said to it",
+      "name": "Searches saved conversations across sessions",
       "keywords": [
         "search history",
         "conversation search",
@@ -363,11 +370,15 @@
         "chat history",
         "lookup previous"
       ],
-      "status": "missing",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/store.js: sessions are listed and loaded by id, never searched"
-      ]
+        "src/store.js: searchSessions(query, { limit }) scans saved session JSON, literal case-insensitive matches, newest-first bounded snippets",
+        "src/tools.js: read-only search_history tool, matched sessions registered as citable sources",
+        "test/batch2.test.js: multi-session matching, blank-query no-I/O, truncation, symlink confinement and real tool citations",
+        "docs/GUIDE.md: Search past conversations"
+      ],
+      "note": "Searches retained user/assistant text only, not deleted turns, tool output or system prompts. Sessions retain at most 200 messages; files over 2 MiB or unreadable/malformed files are skipped. No external dependency or persistent search index. All saved sessions share the existing single-owner trust boundary."
     },
     {
       "id": "export",

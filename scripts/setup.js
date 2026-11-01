@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { checkVoice } from "../src/voice.js";
 /**
  * scripts/setup.js — the guided onboarding.
  *
@@ -519,6 +520,7 @@ async function doctor(values = parseEnvFile(ENV_PATH)) {
   const port = values.PINCH_PORT || "7777";
 
   const rows = [];
+  rows.push(await checkVoice(values.WHISPER_URL));
 
   const provider = (values.LLM_PROVIDER || "ollama").toLowerCase();
   if (provider === "ollama") {
@@ -602,6 +604,9 @@ try {
   if (args.includes("--check") || args.includes("--doctor")) {
     if (!existsSync(ENV_PATH)) {
       console.log(`\n  ${C.gold("▲")} No .env yet. Run ${C.bold("npm run setup")} first.\n`);
+      const [level, message] = await checkVoice(process.env.WHISPER_URL);
+      console.log(`  ${level === "warn" ? C.gold("▲") : C.dim("·")} ${message}`);
+      rl.close();
       process.exit(0);
     }
     await doctor();

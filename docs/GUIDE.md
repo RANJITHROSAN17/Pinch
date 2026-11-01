@@ -11,6 +11,10 @@ from zero to a running assistant.
 
 ## Contents
 
+- [Search past conversations](#search-past-conversations)
+
+- [Search your documents](#search-your-documents)
+
 - [Voice, on your phone](#voice-on-your-phone)
 - [Attaching files](#attaching-files)
 - [Reminders that actually fire](#reminders-that-actually-fire)
@@ -26,6 +30,7 @@ from zero to a running assistant.
 - [Command line](#command-line)
 - [What Pinch did](#what-pinch-did)
 - [Third-party tools (MCP)](#third-party-tools-mcp)
+- [Your own tools (no code required)](#your-own-tools-no-code-required)
 - [Configuration](#configuration)
 - [Extending it](#extending-it)
 - [This repo maintains itself (a little)](#this-repo-maintains-itself-a-little)
@@ -491,6 +496,91 @@ A server that fails to start is logged and skipped — it never stops Pinch
 booting. Tool output is wrapped in `<untrusted-source>` and treated as data,
 because a third-party tool is exactly as trustworthy as a web page you fetched.
 
+## Your own tools (no code required)
+
+MCP is the right answer for *someone else's* tools. It is a heavy answer for the
+one command you already run by hand every morning. For that there is a JSON file:
+
+```bash
+PINCH_TOOLS="$HOME/.pinch/tools.json"
+```
+
+```json
+{
+  "tools": [
+    {
+      "name": "deploy_status",
+      "description": "Show the current status of the deploy pipeline.",
+      "command": "curl",
+      "args": ["-s", "https://api.example.com/status"]
+    },
+    {
+      "name": "notes_search",
+      "description": "Search my notes for a phrase and return matching lines.",
+      "command": "grep",
+      "args": ["-rn", "{{phrase}}", "/home/me/notes"],
+      "parameters": {
+        "phrase": {
+          "type": "string",
+          "description": "Text to search for",
+          "required": true
+        }
+      }
+    }
+  ]
+}
+```
+
+Restart, and the boot log says what arrived:
+
+```
+● custom tools: 2 from /home/me/.pinch/tools.json (each call needs your approval)
+```
+
+A copy you can edit lives at [`pinch-tools.example.json`](../pinch-tools.example.json).
+
+**Pinch never executes the file.** It is data. You author a command that already
+works in your terminal; the model only fills in the arguments you declared. That
+is the entire trust model, so the rest of this section is the rules that keep it
+true.
+
+### What the manifest cannot do
+
+There is no `trusted` field. Every call to a manifest tool stops for approval,
+every time, and this is not configurable. MCP lets you trust a server because you
+can read its source; here the *arguments* come from the model, so there is
+nothing for you to have read in advance.
+
+### The five guards
+
+| Guard | Why it is there |
+| :--- | :--- |
+| **No shell** | Arguments are passed as an argv array. A model-supplied `ok; rm -rf ~` is one literal argument to your program, not two commands. |
+| **Executable pinned at load** | `git` is resolved to `/usr/bin/git` once, at boot. A later `PATH` change, or a same-named file in the working directory, cannot take its place. |
+| **No executable inside the workspace** | The agent can write to `PINCH_WORKSPACE`. A tool binary kept there could be replaced between the approval prompt and the call. Move the script outside the workspace, or narrow `PINCH_WORKSPACE`. |
+| **A value may not start with `-`** | Otherwise `grep {{term}}` becomes `grep --include=*.pem` at the model's discretion — argument injection into your program. Declare `"allowLeadingDash": true` on that one parameter if passing flags is the point. |
+| **Output is untrusted** | A command's stdout can contain text that reads like an instruction. It is wrapped in `<untrusted-source>`, exactly as an MCP result is. |
+
+Also enforced: names may not shadow a built-in tool, unknown parameters are an
+error rather than silently dropped, arguments are capped at 4,096 characters,
+output at 12,000, timeouts at 120 seconds, and a manifest at 32 tools.
+
+### What is not supported, and will not pretend to be
+
+- **No inline shell strings.** `args` is an array of tokens, so `sh -c "..."` has
+  to be written out as `["sh", "-c", "..."]` — at which point the guard above is
+  doing nothing for you, and you should notice that while typing it.
+- **No non-string parameters.** A tool that wants a number receives a string and
+  parses it. One quoting rule is easier to keep right than three.
+- **No output streaming.** The reply arrives when the command finishes or its
+  timeout fires.
+- **No automatic discovery.** A file you did not point `PINCH_TOOLS` at is a file
+  you did not review, so Pinch does not go looking for one.
+
+A bad entry is logged with its reason and skipped; the rest still load. An
+assistant that refuses to boot because of a typo in one optional file is worse
+than one that boots with 3 of 4 tools and says so.
+
 ## Configuration
 
 Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
@@ -532,34 +622,47 @@ Two commands ship with Pinch and change nothing:
 
 ## Extending it
 
-A tool is an object — no plugin API, no registry, no build step:
+Three ways in, depending on whose tool it is.
 
-```js
-// src/tools.js
-export const TOOL_MAP = new Map([
-  // …
-  ["word_count", {
-    schema: {
-      type: "function",
-      function: {
-        name: "word_count",
-        description: "Count words in a file in the workspace.",
-        parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-      },
-    },
-    dangerous: false, // true = goes behind the approval gate
-    async run({ path }) {
-      const text = await readFile(resolveInWorkspace(path), "utf8");
-      return { ok: true, output: `${text.split(/\s+/).filter(Boolean).length} words` };
-    },
-  }],
-]);
+**1. Your own command, no code.** A JSON manifest, described in
+[Your own tools](#your-own-tools-no-code-required) above:
+
+```bash
+PINCH_TOOLS="$HOME/.pinch/tools.json"
 ```
 
-The model sees it on the next turn. `dangerous: true` puts it behind the approval gate
-automatically — you cannot forget to add the gate, because the gate is not yours to forget.
+**2. Someone else's tools.** An [MCP](https://modelcontextprotocol.io) server, one
+line in `.env` — see [Third-party tools](#third-party-tools-mcp).
 
----
+**3. A tool built into Pinch.** For contributors. A built-in is an object in
+`src/tools.js`:
+
+```js
+{
+  name: "word_count",
+  dangerous: false,              // true = goes behind the approval gate
+  description: "Count words in a file in the workspace.",
+  parameters: {
+    type: "object",
+    properties: { path: stringProp("Path relative to the workspace") },
+    required: ["path"],
+  },
+  async run({ path }) {
+    const text = await readFile(resolveInWorkspace(path), "utf8");
+    return { ok: true, output: `${text.split(/\s+/).filter(Boolean).length} words` };
+  },
+}
+```
+
+`toolSchemas()` is derived from the registry, not the array above it, so a tool
+that arrives at boot — a manifest entry, an MCP server — is offered to the model
+on the next turn without touching this file. That is what `registerTool()` is for,
+and it refuses to let anything shadow a built-in name.
+
+`dangerous: true` puts a tool behind the approval gate automatically — you cannot
+forget to add the gate, because the gate is not yours to forget. State-changing
+tools are tested by `test/custom-tools.test.js` (manifest) and `test/mcp.test.js`
+(third-party) for exactly that reason.
 
 ---
 
@@ -697,3 +800,97 @@ node --test     # 110 tests, must stay green
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ---
+
+## Search your documents
+
+Ask: **“Search my `notes` folder for the reimbursement ceiling, and cite the document.”**
+Pinch offers `search_documents` to the model. It takes an explicit workspace folder,
+query and optional result limit (1–8). It builds an in-memory passage index, ranks
+word matches, and returns excerpts with file paths and line ranges. Retrieved
+passages enter the existing per-turn source registry; answers can cite them as
+`[1]`. This is tool-assisted answering, not a guarantee that every model will use
+or correctly interpret the evidence. Ask it to search explicitly when needed.
+
+Everything stays on your device with the default local model. No embedding server,
+network request, database or additional dependency is required. If you deliberately
+use a cloud model, retrieved passages become part of that model's prompt.
+
+**Supported:** `.txt`, `.md`, `.markdown`, `.rst`, `.csv`. This is lexical retrieval,
+not semantic embeddings: use words present in your documents. PDF, DOCX, OCR and
+image extraction are not supported. A no-match result is not proof of absence.
+
+The index is rebuilt per query, so edited and deleted files do not leave stale
+copies. Nothing is persisted. Hidden files/directories, dependency/build trees,
+symlinks and binary-looking content are excluded. Every read uses the same
+workspace and protected-credential policy as file tools. Output is labelled
+untrusted: document text must not be followed as instructions. These are safeguards,
+not an OS sandbox or a complete prompt-injection defense; concurrent replacement
+of parent directories by another local process remains outside this guarantee.
+
+Scan budgets: 2,000 entries, eight directory levels, 256 KiB per file and 4 MiB
+in total. Passages cover up to 24 lines with excerpts capped at 4,000 characters.
+Limit hits to eight. When scan/size budgets omit content, output says **PARTIAL**;
+narrow the folder instead of treating the result as exhaustive. Skipped files are
+counted, including unreadable files. Indexing is bounded but runs in-process, so
+large folders can briefly delay the event loop; this is intended for small personal
+text collections, not enterprise-scale search.
+
+### Optional Whisper transcription API
+
+The web microphone uses browser speech recognition; configuring Whisper does not
+replace it automatically. Clients that upload recorded audio can use
+`POST /api/transcribe` (same Pinch authentication/origin rules as other APIs).
+Send raw audio bytes, not multipart, with `Content-Type: audio/webm` (codec
+parameters allowed), `audio/ogg`, `audio/wav`, `audio/x-wav`, `audio/mpeg`,
+`audio/mp4` or `audio/flac`. The response is `{ "text": "..." }`.
+
+Set `WHISPER_URL` to the **full OpenAI-compatible transcription endpoint**, e.g.
+`http://127.0.0.1:8080/v1/audio/transcriptions`, and restart. Pinch forwards a
+multipart file and model `whisper-1`. Use a local server to keep recordings on
+your device; pointing this URL at a remote server sends audio there.
+
+Limits: 10 MB per upload, five seconds for the upstream request **including the
+response body**, 1 MB for the upstream response. Oversized uploads return 413,
+unsupported MIME types 415, empty clips 400, and unset/unreachable/timed-out or
+invalid upstream responses 502 with JSON guidance. MIME validation is a declared
+format allowlist, not a codec decoder or proof that the bytes are valid audio.
+
+`npm run doctor` reports unconfigured voice as optional, unreachable/erroring
+endpoints as warnings. Automatic probes contact only loopback HTTP(S) origins
+(`localhost`, `127.0.0.1`, `[::1]`), at `/`, with no credentials, query, or redirect
+following. Remote or credential-bearing URLs are reported as configured but not
+probed; verify those explicitly. Transcription still uses your configured full
+endpoint. Doctor uses HEAD (including 405 responses), does not upload audio, and
+reports only origin reachability—not endpoint or transcription readiness.
+
+## Search past conversations
+
+Ask **“Search my history for green bicycle”**. The read-only `search_history`
+tool searches saved user and assistant messages across sessions using a literal,
+case-insensitive substring (not a regular expression or semantic search). Results
+are ordered by message timestamp, newest first; missing/invalid timestamps sort
+last. Each result identifies the session, role, timestamp and a match-centered
+snippet of at most 240 characters. Session citations enter the existing source
+registry, so the model can cite what it actually retrieved as `[1]`.
+
+`query` is required. Empty/whitespace queries return no results without disk
+access. `limit` defaults to 10 and is clamped to 1–50. Queries over 1,000 characters
+return no results. No matching saved turn is not proof that something was never
+said: sessions retain only their last 200 messages, and deleted history is gone.
+Tool/system messages, non-text content, malformed/unreadable JSON and session files
+over 2 MiB are skipped. Snippets are excerpts of statements, not independently
+verified facts. Historical content is labelled untrusted and must not be followed
+as new instructions.
+
+No cloud search, external package, or secondary index is used. Search reads current
+files rather than cached copies, so edits/deletions do not leave search ghosts.
+Only regular session files directly inside `data/sessions/` are eligible;
+symlinked session files/directories are refused. These checks are not an OS sandbox
+against another local process concurrently replacing parent directories.
+
+This follows Pinch's **single-owner** model: it can search all locally saved sessions,
+including across channels. It is not per-user access control for a multi-tenant
+service. With the default local model, snippets stay on-device; if you choose a
+cloud model, retrieved snippets become part of its prompt. Searches run synchronously
+and may briefly pause the event loop on large archives; this is not a large-scale
+search service.
