@@ -854,6 +854,9 @@ invalid upstream responses 502 with JSON guidance. MIME validation is a declared
 format allowlist, not a codec decoder or proof that the bytes are valid audio.
 
 `npm run doctor` reports unconfigured voice as optional, unreachable/erroring
-endpoints as warnings, and reachable endpoints as HTTP-reachable only. It uses
-HEAD (including 405 responses), does not upload audio, and does not claim that
-transcription has been verified.
+endpoints as warnings. Automatic probes contact only loopback HTTP(S) origins
+(`localhost`, `127.0.0.1`, `[::1]`), at `/`, with no credentials, query, or redirect
+following. Remote or credential-bearing URLs are reported as configured but not
+probed; verify those explicitly. Transcription still uses your configured full
+endpoint. Doctor uses HEAD (including 405 responses), does not upload audio, and
+reports only origin reachability—not endpoint or transcription readiness.

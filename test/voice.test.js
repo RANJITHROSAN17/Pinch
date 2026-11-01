@@ -22,7 +22,7 @@ test("doctor voice: unset is optional, malformed/unreachable is warning", async 
 });
 
 test("doctor voice: reachable does not claim verified transcription", async () => {
-  await serve((req, res) => { assert.equal(req.method, "HEAD"); res.writeHead(405); res.end(); }, async (url) => {
+  await serve((req, res) => { assert.equal(req.method, "HEAD"); assert.equal(req.url, "/"); res.writeHead(405); res.end(); }, async (url) => {
     const result = await checkVoice(url);
     assert.equal(result[0], "ok");
     assert.match(result[1], /transcription not verified/);
@@ -49,5 +49,34 @@ test("voice adapter: rejects upstream errors and invalid response shape", async 
   });
   await serve((req, res) => { req.resume(); res.end("{}"); }, async (url) => {
     await assert.rejects(transcribeAudio(Buffer.from("a"), "audio/wav", url), /no text field/);
+  });
+});
+
+
+test("doctor voice: does not request remote or credential-bearing configured URLs", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("must not fetch"); };
+  try {
+    for (const url of ["https://example.com/v1/audio?secret=abc", "http://127.0.0.1.example.com/", "http://user:password@127.0.0.1:8080/", "http://169.254.169.254/latest/meta-data/"]) {
+      const result = await checkVoice(url);
+      assert.equal(result[0], "warn");
+      assert.match(result[1], /probe skipped/);
+    }
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test("doctor voice: does not follow redirects from loopback", async () => {
+  let calls = 0;
+  await serve((req, res) => {
+    calls++;
+    res.writeHead(302, { location: "http://169.254.169.254/latest/meta-data/" });
+    res.end();
+  }, async (url) => {
+    const result = await checkVoice(url + "?secret=not-forwarded");
+    assert.equal(result[0], "warn");
+    assert.match(result[1], /302/);
+    assert.equal(calls, 1);
   });
 });
