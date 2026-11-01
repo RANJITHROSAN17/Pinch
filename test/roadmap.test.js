@@ -162,7 +162,7 @@ test("roadmap status, issue classifier, and PR context helpers stay deterministi
   assert.deepEqual(detectFileDrift(rm), []);
 
   const md = renderStatusMarkdown(rm, [
-    { number: 42, state: "open", body: "hello\n<!-- roadmap:pinch-004-session-history-search -->" },
+    { number: 42, state: "OPEN", body: "hello\n<!-- roadmap:pinch-004-session-history-search -->" },
   ]);
   assert.ok(md.startsWith(STATUS_MARKER));
   assert.match(md, /#42/);

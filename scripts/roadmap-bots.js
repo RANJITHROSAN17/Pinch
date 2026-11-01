@@ -54,7 +54,7 @@ export function renderStatusMarkdown(roadmap, issues = [], repoRoot = ROOT) {
     if (iss.pull_request) continue;
     const id = extractMarkerId(iss.body);
     if (!id) continue;
-    if (iss.state === "open") openByMarker.set(id, iss);
+    if (String(iss.state || "").toLowerCase() === "open") openByMarker.set(id, iss);
     else closedMarkers.add(id);
   }
 
