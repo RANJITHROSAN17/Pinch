@@ -140,3 +140,46 @@ test("the committed manifest declares latest_release, so the field cannot go mis
   const doc = JSON.parse(readFileSync(MANIFEST, "utf8"));
   assert.ok("latest_release" in doc.meta, "meta.latest_release must exist, empty until a release is cut");
 });
+
+
+test("every workflow action stays SHA-pinned for OpenSSF Scorecard", async () => {
+  const { checkWorkflows } = await import("../scripts/roadmap-bots.js");
+  const { files, errors } = checkWorkflows();
+  assert.ok(files >= 7);
+  assert.deepEqual(errors, []);
+});
+
+test("roadmap status, issue classifier, and PR context helpers stay deterministic and drift-free", async () => {
+  const {
+    loadRoadmap,
+    detectFileDrift,
+    renderStatusMarkdown,
+    classifyIssue,
+    renderPrContext,
+    STATUS_MARKER,
+  } = await import("../scripts/roadmap-bots.js");
+  const rm = loadRoadmap();
+  assert.deepEqual(detectFileDrift(rm), []);
+
+  const md = renderStatusMarkdown(rm, [
+    { number: 42, state: "open", body: "hello\n<!-- roadmap:pinch-004-session-history-search -->" },
+  ]);
+  assert.ok(md.startsWith(STATUS_MARKER));
+  assert.match(md, /#42/);
+
+  const labels = classifyIssue("Telegram voice note fails on reconnect", "Whisper transcription error");
+  assert.ok(labels.includes("area/channels"));
+  assert.ok(labels.includes("area/voice"));
+  assert.ok(labels.includes("type/bug"));
+
+  const ctx = renderPrContext(rm, ["src/store.js"], "Implements session search");
+  assert.match(ctx, /pinch-004-session-history-search/);
+  assert.match(ctx, /Closes #<issue-number>/);
+});
+
+test("contributor-queue checks --state all so closed issues are never re-filed as duplicates", async () => {
+  const { readFileSync } = await import("node:fs");
+  const yml = readFileSync(WORKFLOW, "utf8");
+  assert.match(yml, /gh issue list --state all/);
+  assert.match(yml, /issues:\s*\n\s*types:\s*\[closed\]/);
+});

@@ -5,7 +5,10 @@
     "owner": "RANJITHROSAN17",
     "reply_sla_hours": 24,
     "open_easy_cap": 3,
-    "created_labels": ["good first issue", "help wanted"],
+    "created_labels": [
+      "good first issue",
+      "help wanted"
+    ],
     "latest_release": "",
     "notes": [
       "status: backlog    -> not eligible to be filed",
@@ -14,7 +17,8 @@
       "status: shipped    -> the bot may comment + close its own issue, naming the release",
       "Only entries with status=ready AND a complete body are ever filed.",
       "latest_release   -> the tag the close comment cites; empty means the bot will not close anything it filed"
-    ]
+    ],
+    "open_curated_cap": 4
   },
   "items": [
     {
@@ -22,9 +26,15 @@
       "title": "docs: document the doctor and brain commands that already exist",
       "status": "shipped",
       "difficulty": "easy",
-      "labels": ["documentation", "good first issue"],
+      "labels": [
+        "documentation",
+        "good first issue"
+      ],
       "time_estimate": "~1-2 hours",
-      "files": ["README.md", "docs/GUIDE.md"],
+      "files": [
+        "README.md",
+        "docs/GUIDE.md"
+      ],
       "verify": "node --test && node scripts/audit.js",
       "body": "## Context\n\n`package.json` already ships `doctor` (`node scripts/setup.js --check`) and `brain` (`node scripts/braincheck.js`), and the README mentions neither. A newcomer with a misconfigured model has no documented way to diagnose it.\n\n## What to change\n\n- `README.md`: after the install block, add `npm run doctor` and `npm run brain`, one line each on what they check.\n- `docs/GUIDE.md`: add a \"When something is wrong\" subsection pointing at both.\n\nDocs only; do not touch `src/` or `scripts/`.\n\n## Acceptance criteria\n\n- [ ] `npm run doctor` appears in `README.md` and `docs/GUIDE.md`\n- [ ] Both are described from real output you ran yourself\n- [ ] `node --test` still passes\n\n## How to verify\n\n```bash\nnode scripts/setup.js --check\nnode scripts/braincheck.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. The \"Install it in two commands\" block near the top of `README.md`.\n2. The configuration section of `docs/GUIDE.md`.\n\n## Time estimate\n\n~1-2 hours."
     },
@@ -33,9 +43,15 @@
       "title": "test(security): prove resolveInWorkspace() refuses a symlink escape",
       "status": "shipped",
       "difficulty": "easy",
-      "labels": ["security", "good first issue"],
+      "labels": [
+        "security",
+        "good first issue"
+      ],
       "time_estimate": "~2-3 hours",
-      "files": ["test/hardening.test.js", "src/tools.js"],
+      "files": [
+        "test/hardening.test.js",
+        "src/tools.js"
+      ],
       "verify": "node --test test/hardening.test.js && node scripts/audit.js",
       "body": "## Context\n\n`src/tools.js:90` defines `resolveInWorkspace()`, and the README makes a security claim about it: files are confined to `PINCH_WORKSPACE` through `realpath()`, so a symlink cannot walk out. That claim has no targeted regression test.\n\nRun the case by hand first. If the guard does **not** hold, stop and report it privately per `SECURITY.md` instead of opening a public PR.\n\n## What to change\n\n- `test/hardening.test.js`: add a test that creates a temp workspace, plants a symlink pointing outside it, and asserts `resolveInWorkspace()` refuses the path.\n- Use `node:test` and `node:assert/strict`. No new dependencies.\n\n## Acceptance criteria\n\n- [ ] The test fails if `realpath()` confinement is removed (check by patching temporarily, then revert)\n- [ ] Temp directory cleaned up in a `finally` block\n- [ ] Passes on Node 22, 24 and 26\n- [ ] Test name states the guarantee, not the implementation\n\n## How to verify\n\n```bash\nnode --test test/hardening.test.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/tools.js:90` - `resolveInWorkspace()`, about 30 lines.\n2. `test/hardening.test.js` - copy the setup/teardown pattern from the nearest case.\n\n## Time estimate\n\n~2-3 hours."
     },
@@ -44,33 +60,172 @@
       "title": "test(cli): cover --version and an unknown verb in a smoke test",
       "status": "shipped",
       "difficulty": "easy",
-      "labels": ["good first issue"],
+      "labels": [
+        "good first issue"
+      ],
       "time_estimate": "~2-3 hours",
-      "files": ["test/cli.test.js", "bin/pinch.js"],
+      "files": [
+        "test/cli.test.js",
+        "bin/pinch.js"
+      ],
       "verify": "node --test test/cli.test.js",
       "body": "## Context\n\n`bin/pinch.js` is the entry point every user touches, and `scripts/growth.js` already carries a CLI-drift collector because promised verbs have drifted from implemented ones before. There is still no test that runs the CLI and asserts `--version` and an unknown verb behave sanely.\n\n## What to change\n\n- `test/cli.test.js` (new): via `node:child_process` `execFile` (argv array, never a shell string),\n  1. `--version` exits 0 and prints the `package.json` version;\n  2. an unknown verb exits non-zero or prints usage - assert whichever it does today and say which in the name;\n  3. `help` prints a usage line containing a real verb.\n\n## Acceptance criteria\n\n- [ ] No hard-coded version string; read it from `package.json`\n- [ ] `execFile` with an argv array\n- [ ] Passes on Node 22, 24, 26\n- [ ] `node --test` still fully green\n\n## How to verify\n\n```bash\nnode bin/pinch.js --version\nnode bin/pinch.js help\nnode bin/pinch.js nope; echo \"exit=$?\"\nnode --test test/cli.test.js\n```\n\n## Where to start\n\n1. `bin/pinch.js` - the verb `switch` and `usage()`.\n2. `test/tools.test.js` - the existing spawn style.\n\n## Time estimate\n\n~2-3 hours."
     },
     {
-      "id": "pinch-004-issue-chooser",
-      "title": "chore: add an issue-template chooser and a short PR template",
-      "status": "backlog",
+      "id": "pinch-004-session-history-search",
+      "title": "feat(memory): search local conversation history across sessions",
+      "status": "ready",
       "difficulty": "easy",
-      "labels": ["documentation", "good first issue"],
-      "time_estimate": "~1 hour",
-      "files": [".github/ISSUE_TEMPLATE/config.yml", ".github/PULL_REQUEST_TEMPLATE.md"],
-      "verify": "python3 -c \"import yaml;yaml.safe_load(open('.github/ISSUE_TEMPLATE/config.yml'))\"",
-      "body": "## Context\n\nGitHub only shows an issue chooser when `.github/ISSUE_TEMPLATE/config.yml` exists, so the community profile still reports `issue_template: None`. `pull_request_template` is also `None`.\n\n## What to change\n\n- Add `.github/ISSUE_TEMPLATE/config.yml` with three contact links: where to start, the private security path, discussions.\n- Add `.github/PULL_REQUEST_TEMPLATE.md` with three questions: what/why, does it touch a guard rail, and test+audit output.\n\n## Acceptance criteria\n\n- [ ] `config.yml` parses as YAML\n- [ ] Security link points at the private path in `SECURITY.md`, not a public form\n- [ ] PR template is short enough not to add friction to a repo that already gates on 256 tests\n- [ ] `community/profile` health reaches 100 after merge\n\n## How to verify\n\n```bash\npython3 -c \"import yaml;yaml.safe_load(open('.github/ISSUE_TEMPLATE/config.yml'))\"\ncurl -s https://api.github.com/repos/RANJITHROSAN17/Pinch/community/profile | grep health_percentage\n```\n\n## Where to start\n\n1. `.github/ISSUE_TEMPLATE/bug_report.yml` for the header style.\n2. `SECURITY.md` for the reporting URL.\n\n## Time estimate\n\n~1 hour."
+      "labels": [
+        "good first issue",
+        "help wanted",
+        "roadmap",
+        "area/memory"
+      ],
+      "time_estimate": "~2-3 hours",
+      "files": [
+        "src/store.js",
+        "src/tools.js",
+        "test/batch2.test.js"
+      ],
+      "verify": "node --test test/batch2.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` marks `conversation-search` as `missing` (`src/store.js` lists and loads sessions by ID, never searches them). Because Pinch keeps every session on disk as plain atomic JSON under `data/sessions/`, searching past conversations requires zero external dependencies.\n\n## What to change\n\n- `src/store.js`: add `searchSessions(query, { limit = 10 } = {})` returning matching turns (`{ sessionId, role, snippet, ts }`) sorted newest-first, confined strictly inside `data/sessions/`.\n- `src/tools.js`: expose a read-only `search_history` tool (`dangerous: false`) that delegates to `searchSessions` and registers matched sessions in `src/sources.js` so citations stay verifiable.\n- `test/batch2.test.js`: cover multi-session substring/case-insensitive search, empty-query refusal, and snippet truncation.\n\n## Acceptance criteria\n\n- [ ] `searchSessions()` reads only inside `data/sessions/` and returns bounded snippets (`<= 240` chars)\n- [ ] `search_history` is non-dangerous (read-only) and requires zero external packages\n- [ ] Empty or whitespace-only queries return an empty array without scanning disk\n- [ ] Unit tests pass on Node 22, 24, and 26, and `node scripts/audit.js` stays green\n\n## How to verify\n\n```bash\nnode --test test/batch2.test.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/store.js` \u2014 inspect how sessions are listed and cached.\n2. `src/tools.js` \u2014 follow the `recall` tool shape.\n\n## Time estimate\n\n~2-3 hours."
     },
     {
-      "id": "pinch-005-npm-publish",
-      "title": "chore: prepare package.json for npm publish as pinch-ai",
+      "id": "pinch-005-telegram-reply-context",
+      "title": "feat(telegram): preserve reply_to_message context in multi-turn chats",
+      "status": "ready",
+      "difficulty": "easy",
+      "labels": [
+        "good first issue",
+        "help wanted",
+        "roadmap",
+        "area/channels"
+      ],
+      "time_estimate": "~2 hours",
+      "files": [
+        "src/channels/telegram.js",
+        "test/runtime.test.js"
+      ],
+      "verify": "node --test test/runtime.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`src/channels/telegram.js` polls `getUpdates` and routes `msg.text` directly to `routeMessage()`. When a user swipe-replies to an older Telegram message (`msg.reply_to_message`), that quoted text is dropped, so the assistant loses which message \"do that again\" or \"summarize this\" refers to.\n\n## What to change\n\n- `src/channels/telegram.js`: extract a pure helper `formatIncomingTelegramText(msg)` that prepends a bounded `[Replying to: \"...\"]\\n` header (capped at 400 chars) when `msg.reply_to_message?.text` or `caption` is present, while leaving approval words (`yes`/`no`) untouched when replying to an approval prompt.\n- `test/runtime.test.js`: add unit tests covering plain messages, quoted replies, oversized quoted text truncation, and approval replies.\n\n## Acceptance criteria\n\n- [ ] Quoted Telegram replies include a bounded `[Replying to: ...]` prefix (`<= 400` chars)\n- [ ] Replying `yes` or `no` to an approval prompt still resolves the pending approval cleanly\n- [ ] Pure helper exported and tested without network calls\n- [ ] `node --test` and `node scripts/audit.js` pass\n\n## How to verify\n\n```bash\nnode --test test/runtime.test.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/channels/telegram.js` \u2014 update loop around `routeMessage({ channel: \"telegram\", ... })`.\n2. `src/channels/router.js` \u2014 check how `YES` / `NO` approval replies are matched.\n\n## Time estimate\n\n~2 hours."
+    },
+    {
+      "id": "pinch-006-voice-whisper-health-and-bounds",
+      "title": "feat(voice): validate audio uploads, enforce Whisper timeout, and report voice status in doctor",
+      "status": "ready",
+      "difficulty": "easy",
+      "labels": [
+        "good first issue",
+        "help wanted",
+        "roadmap",
+        "area/voice"
+      ],
+      "time_estimate": "~2-3 hours",
+      "files": [
+        "src/server.js",
+        "scripts/setup.js",
+        "test/http-surface.test.js"
+      ],
+      "verify": "node --test test/http-surface.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` lists `voice` as `partial`: incoming audio works when `WHISPER_URL` is configured in `src/server.js`, but misconfigured or unreachable Whisper endpoints fail opaquely during phone voice use and `npm run doctor` (`scripts/setup.js --check`) does not report voice configuration status.\n\n## What to change\n\n- `src/server.js`: enforce a bounded timeout and supported audio MIME/size check on voice transcription requests, returning actionable JSON errors (`413` / `415` / `502` with clear message) when `WHISPER_URL` times out or is unset.\n- `scripts/setup.js`: in `--check` (`npm run doctor`), report whether `WHISPER_URL` is configured and reachable (failing soft when unset, warning clearly when unreachable).\n- `test/http-surface.test.js`: test unset `WHISPER_URL`, unsupported MIME, and upstream timeout handling.\n\n## Acceptance criteria\n\n- [ ] Oversized or non-audio payloads are rejected with `413` / `415` before contacting `WHISPER_URL`\n- [ ] Upstream Whisper hang aborts cleanly within a bounded deadline without crashing the server\n- [ ] `node scripts/setup.js --check` reports voice configuration state accurately\n- [ ] `node --test` and `node scripts/audit.js` pass\n\n## How to verify\n\n```bash\nnode --test test/http-surface.test.js\nnode scripts/setup.js --check\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/server.js` \u2014 search for `WHISPER_URL`.\n2. `scripts/setup.js` \u2014 inspect the `--check` diagnostic output.\n\n## Time estimate\n\n~2-3 hours."
+    },
+    {
+      "id": "pinch-007-runtime-model-switching",
+      "title": "feat(brain): switch active local/cloud model at runtime without editing .env",
+      "status": "ready",
+      "difficulty": "medium",
+      "labels": [
+        "help wanted",
+        "roadmap",
+        "area/cli"
+      ],
+      "time_estimate": "~3-4 hours",
+      "files": [
+        "src/brain.js",
+        "src/server.js",
+        "src/channels/router.js",
+        "test/agent.test.js"
+      ],
+      "verify": "node --test test/agent.test.js test/http-surface.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` marks `model-switching` as `partial`: `LLM_PROVIDER` and `OLLAMA_MODEL` are read once at boot, so switching between a fast local model and a coding/reasoning model requires editing `.env` and restarting Pinch.\n\n## What to change\n\n- `src/brain.js`: allow listing available Ollama models (`GET /api/tags`) and setting/reading the active runtime model override in memory (persisted optionally to `data/runtime.json` via `store.js`, never rewriting `.env`).\n- `src/server.js`: expose `GET /api/models` and auth-guarded `POST /api/models` (`PINCH_KEY` / origin-checked).\n- `src/channels/router.js`: support `/model` (show current + available) and `/model <name>` across Telegram, Discord, Slack, WhatsApp, and web.\n\n## Acceptance criteria\n\n- [ ] `/model` reports active provider and model; `/model <name>` switches subsequent turns without restart\n- [ ] `POST /api/models` enforces the same auth/CSRF/host protections tested in `test/http-surface.test.js`\n- [ ] `.env` is never modified on disk\n- [ ] Update `docs/CAPABILITIES.json` `model-switching` evidence and add tests in `test/agent.test.js`\n\n## How to verify\n\n```bash\nnode --test test/agent.test.js test/http-surface.test.js\nnode --test\nnode scripts/audit.js\n```\n\n## Where to start\n\n1. `src/brain.js` \u2014 provider dispatch and model name resolution.\n2. `src/channels/router.js` \u2014 command interception before `runAgent()`.\n\n## Time estimate\n\n~3-4 hours."
+    },
+    {
+      "id": "pinch-008-saved-prompt-personas",
+      "title": "feat(personas): saved prompt presets and reusable personas in data/personas.json",
+      "status": "backlog",
+      "difficulty": "easy",
+      "labels": [
+        "good first issue",
+        "help wanted",
+        "roadmap",
+        "area/memory"
+      ],
+      "time_estimate": "~2-3 hours",
+      "files": [
+        "src/prompt.js",
+        "src/store.js",
+        "test/agent.test.js"
+      ],
+      "verify": "node --test test/agent.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` marks `prompt-library` as `missing` (`src/prompt.js` builds one static persona at boot from `OWNER_NAME` and `PINCH_PROFILE`). Users want named local presets (e.g. concise coder, daily planner, strict reviewer) stored locally in `data/`.\n\n## What to change\n\n- `src/store.js` & `src/prompt.js`: load/save named persona overlays from `data/personas.json` using `atomicWrite()`, while keeping safety/guardrail system instructions non-overridable.\n- `test/agent.test.js`: verify persona switching changes tone/instructions without bypassing `src/guard.js` or tool approval rules.\n\n## Acceptance criteria\n\n- [ ] Personas persist atomically inside `data/personas.json` and are included in `pinch export`\n- [ ] Core honesty/tool-approval instructions in `src/prompt.js` cannot be erased by a persona preset\n- [ ] Covered by unit tests in `test/agent.test.js`\n\n## How to verify\n\n```bash\nnode --test test/agent.test.js\nnode scripts/audit.js\n```\n\n## Time estimate\n\n~2-3 hours."
+    },
+    {
+      "id": "pinch-009-npm-publish",
+      "title": "chore(cli): prepare package.json for npm publish as pinch-ai without leaking local state",
       "status": "backlog",
       "difficulty": "medium",
-      "labels": ["help wanted"],
+      "labels": [
+        "help wanted",
+        "roadmap",
+        "area/cli"
+      ],
       "time_estimate": "~2 hours",
-      "files": ["package.json", ".npmignore", "README.md"],
-      "verify": "npm pack --dry-run",
-      "body": "## Context\n\nThe only install path is `git clone`. `npm i -g pinch` resolves to an unrelated 2022 package, so the product name is unavailable on npm; `pinch-ai` is free.\n\n## What to change\n\n- `package.json`: `private: false`, `files` allowlist, `main`/`exports`, `publishConfig.access: public`.\n- `.npmignore` must exclude `data/`, `test/`, and `.env` explicitly.\n- `README.md`: offer `npx pinch-ai setup` as the first install path.\n\n## Acceptance criteria\n\n- [ ] `npm pack --dry-run` tarball contains no `data/`, no `.env`, no `test/`\n- [ ] Tarball under 1 MB\n- [ ] `npx` path documented and tested from a clean directory\n\n## How to verify\n\n```bash\nnpm pack --dry-run\nnpm pack && tar -tzf pinch-ai-*.tgz | grep -E '^(package/data|package/test|package/\\.env)' && echo LEAK || echo clean\n```\n\n## Where to start\n\n1. `package.json`\n2. `.gitignore` for the ignore patterns already known to be sensitive.\n\n## Time estimate\n\n~2 hours."
+      "files": [
+        "package.json",
+        "README.md",
+        "test/cli.test.js"
+      ],
+      "verify": "npm pack --dry-run && node --test test/cli.test.js",
+      "body": "## Context\n\nThe only install path today is `git clone`. `npm i -g pinch` belongs to an unrelated 2022 package, whereas `pinch-ai` provides a clean `npx pinch-ai setup` onboarding flow.\n\n## What to change\n\n- `package.json`: configure `files` allowlist (`bin/`, `src/`, `public/`, `scripts/setup.js`, `scripts/braincheck.js`, `LICENSE`, `README.md`) and `publishConfig.access: public`.\n- `test/cli.test.js`: assert `npm pack --dry-run --json` never bundles `data/`, `test/`, `.github/`, or `.env` and stays under 1 MB.\n\n## Acceptance criteria\n\n- [ ] `npm pack --dry-run` tarball contains no `data/`, `test/`, or `.env`\n- [ ] Tarball size stays under 1 MB\n- [ ] `node --test test/cli.test.js` enforces the allowlist invariant\n\n## How to verify\n\n```bash\nnpm pack --dry-run\nnode --test test/cli.test.js\nnode scripts/audit.js\n```\n\n## Time estimate\n\n~2 hours."
+    },
+    {
+      "id": "pinch-010-plugin-tools-directory",
+      "title": "feat(tools): load local user tool plugins from PINCH_TOOLS_DIR with approval gating",
+      "status": "backlog",
+      "difficulty": "medium",
+      "labels": [
+        "help wanted",
+        "roadmap",
+        "area/mcp"
+      ],
+      "time_estimate": "~3-4 hours",
+      "files": [
+        "src/tools.js",
+        "docs/GUIDE.md",
+        "test/tools.test.js"
+      ],
+      "verify": "node --test test/tools.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` (`plugin-api`) and Growth issue #37 note that adding a custom local tool without spinning up an MCP server currently requires editing `src/tools.js`.\n\n## What to change\n\n- `src/tools.js`: support optional `PINCH_TOOLS_DIR` loading `.js`/`.mjs` tool modules via `registerTool()`, defaulting `dangerous: true` (requires in-chat approval) unless explicitly trusted, and refusing to shadow built-in tools.\n- `docs/GUIDE.md` & `test/tools.test.js`: document the 15-line plugin contract and test shadowing refusal + approval-gate default.\n\n## Acceptance criteria\n\n- [ ] User tool modules register cleanly via `registerTool()` without modifying `src/tools.js`\n- [ ] Untrusted plugin tools default to `dangerous: true` (approval required) and cannot shadow built-ins\n- [ ] Tested in `test/tools.test.js` and passes `node scripts/audit.js`\n\n## How to verify\n\n```bash\nnode --test test/tools.test.js\nnode scripts/audit.js\n```\n\n## Time estimate\n\n~3-4 hours."
+    },
+    {
+      "id": "pinch-011-local-workspace-document-index",
+      "title": "feat(rag): zero-dependency BM25 workspace document index with validated citations",
+      "status": "backlog",
+      "difficulty": "medium",
+      "labels": [
+        "help wanted",
+        "roadmap",
+        "area/memory"
+      ],
+      "time_estimate": "~4-5 hours",
+      "files": [
+        "src/sources.js",
+        "src/tools.js",
+        "test/citations.test.js"
+      ],
+      "verify": "node --test test/citations.test.js test/tools.test.js && node scripts/audit.js",
+      "body": "## Context\n\n`docs/CAPABILITIES.json` (`rag-documents`) and Growth issue #39 highlight local document indexing & Q&A. Pinch can index Markdown, text, PDF, and DOCX files inside `PINCH_WORKSPACE` using pure-JS BM25 chunk ranking and `src/attachments.js` extractors \u2014 zero native or cloud dependencies.\n\n## What to change\n\n- Add incremental mtime-keyed BM25 chunk indexing confined via `resolveInWorkspace()`.\n- Register every retrieved passage in `src/sources.js` so `src/citations.js` and `src/guard.js` validate `[n]` citations identically to web and file reads.\n\n## Acceptance criteria\n\n- [ ] Strictly confined to `PINCH_WORKSPACE` (`realpath` checked, symlink escapes refused)\n- [ ] Retrieved passages register in `src/sources.js` so invented `[n]` citations still trigger `guard.js`\n- [ ] Zero new runtime dependencies; passes `node --test` and `node scripts/audit.js`\n\n## How to verify\n\n```bash\nnode --test test/citations.test.js test/tools.test.js\nnode scripts/audit.js\n```\n\n## Time estimate\n\n~4-5 hours."
     }
   ]
 }

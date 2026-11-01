@@ -1,0 +1,75 @@
+name: PR Governance & Context Bot
+
+# Auto-applies size/* and area/* labels on same-repo PRs and maintains a single sticky comment
+# mapping changed files to `.github/roadmap.json` acceptance criteria.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  context:
+    name: Size, area labels, and roadmap context
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+
+      - name: Compute PR labels and sticky roadmap context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/changed.txt
+          printf '%s' "${PR_BODY:-}" > /tmp/pr-body.md
+          LINES=$(( ${ADDITIONS:-0} + ${DELETIONS:-0} ))
+
+          node scripts/roadmap-bots.js pr-context \
+            --changed /tmp/changed.txt \
+            --body /tmp/pr-body.md \
+            --lines "$LINES" \
+            --out /tmp/pr-out.json
+
+          # Remove stale size/* labels before applying the new one
+          EXISTING_SIZE="$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name | select(startswith("size/"))' || true)"
+          for S in $EXISTING_SIZE; do
+            gh pr edit "$PR_NUMBER" --remove-label "$S" >/dev/null 2>&1 || true
+          done
+
+          while read -r LBL; do
+            [ -n "$LBL" ] || continue
+            gh label create "$LBL" >/dev/null 2>&1 || true
+            gh pr edit "$PR_NUMBER" --add-label "$LBL" >/dev/null 2>&1 || true
+          done < <(jq -r '.labels[]' /tmp/pr-out.json)
+
+          jq -r '.comment' /tmp/pr-out.json > /tmp/comment.md
+          COMMENT_ID="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" --jq '[.[] | select((.body // "") | contains("<!-- pr-guide-bot -->"))][0].id // empty')"
+          if [ -n "$COMMENT_ID" ]; then
+            gh api --method PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" -f body="$(cat /tmp/comment.md)" >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body-file /tmp/comment.md
+          fi

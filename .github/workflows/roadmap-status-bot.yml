@@ -1,0 +1,59 @@
+name: Roadmap Status Bot
+
+# Maintains one rolling issue ("🦞 Pinch Roadmap Status") edited in place so contributors and
+# maintainers always see progress, open tasks, queued backlog, and file drift with zero spam.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/roadmap.json"
+      - "docs/CAPABILITIES.json"
+      - "scripts/roadmap-bots.js"
+      - ".github/workflows/roadmap-status-bot.yml"
+  issues:
+    types: [opened, closed]
+  schedule:
+    - cron: "35 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: roadmap-status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    name: Publish or refresh the rolling roadmap status issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+
+      - name: Render and upsert the status issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh label create "roadmap" --color "1d76db" --description "Curated product roadmap item managed by automation" --force >/dev/null 2>&1 || true
+          gh issue list --state all --limit 500 --json number,title,body,state > /tmp/all-issues.json
+          node scripts/roadmap-bots.js status --issues-json /tmp/all-issues.json --out /tmp/status.md
+
+          EXISTING="$(jq -r '[.[] | select(.state == "open") | select((.body // "") | contains("<!-- roadmap-status -->"))] | .[0].number // empty' /tmp/all-issues.json)"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --title "🦞 Pinch Roadmap Status" --body-file /tmp/status.md
+            echo "Updated rolling status issue #${EXISTING}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            URL="$(gh issue create --title "🦞 Pinch Roadmap Status" --body-file /tmp/status.md --label "roadmap")"
+            echo "Created rolling status issue: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat /tmp/status.md >> "$GITHUB_STEP_SUMMARY"

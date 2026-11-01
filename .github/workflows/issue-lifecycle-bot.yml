@@ -1,0 +1,89 @@
+name: Issue Lifecycle & Labeler Bot
+
+# 1. Auto-routes newly opened human issues to Pinch domain labels (area/*, type/*).
+# 2. When a PR with `Closes #N` merges, marks #N with `status/pending-release` and records the
+#    merge commit SHA so merged-but-unreleased work is explicitly tracked.
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  label-issue:
+    name: Route new issue to Pinch area labels
+    if: github.event_name == 'issues' && github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+
+      - name: Classify and apply missing labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          # Skip issues created by our own roadmap or growth bots
+          if grep -qE '<!-- roadmap:|<!-- roadmap-status -->' <<< "${ISSUE_BODY:-}"; then
+            echo "Bot-managed roadmap issue; skipping auto-labeler."
+            exit 0
+          fi
+          LABELS_JSON="$(node scripts/roadmap-bots.js classify-issue --title "${ISSUE_TITLE:-}" --body "${ISSUE_BODY:-}")"
+          COUNT="$(jq 'length' <<< "$LABELS_JSON")"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No high-confidence area/type match; leaving unlabelled for human triage."
+            exit 0
+          fi
+          ARGS=()
+          while read -r LBL; do
+            [ -n "$LBL" ] || continue
+            gh label create "$LBL" >/dev/null 2>&1 || true
+            ARGS+=(--add-label "$LBL")
+          done < <(jq -r '.[]' <<< "$LABELS_JSON")
+          gh issue edit "$ISSUE_NUM" "${ARGS[@]}"
+
+  record-merge:
+    name: Mark linked issues as merged, pending release
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Annotate closed issues with merge SHA and pending-release status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          NUMS="$(grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+#[0-9]+' <<< "${PR_BODY:-}" | grep -oE '[0-9]+' | sort -u || true)"
+          if [ -z "$NUMS" ]; then
+            echo "No Closes/Fixes #N reference in PR #${PR_NUMBER}."
+            exit 0
+          fi
+          gh label create "status/pending-release" --color "fbca47" --description "Merged to main, not yet in a tagged release" --force >/dev/null 2>&1 || true
+          SHORT_SHA="${MERGE_SHA:0:7}"
+          for NUM in $NUMS; do
+            # Confirm it is an issue, not a PR
+            IS_PR="$(gh api "repos/${REPO}/issues/${NUM}" --jq '.pull_request != null' 2>/dev/null || echo "true")"
+            [ "$IS_PR" = "false" ] || continue
+            gh issue edit "$NUM" --add-label "status/pending-release"
+            gh issue comment "$NUM" --body "Merged in \`${SHORT_SHA}\` (PR #${PR_NUMBER}). Marked \`status/pending-release\` until \`meta.latest_release\` in \`.github/roadmap.json\` records the next tagged release."
+          done
