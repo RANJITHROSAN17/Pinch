@@ -322,13 +322,16 @@
         "tools api",
         "agent builder"
       ],
-      "status": "partial",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/tools.js: tools are a fixed list in this file",
-        "docs/GUIDE.md: 'adding a tool' section"
+        "pinch-tools.example.json: a JSON manifest entry is a tool — name, description, command, args",
+        "src/custom-tools.js: startCustomTools() resolves the executable, refuses anything inside the workspace, registers via registerTool() with dangerous:true",
+        "src/index.js: loaded before listen(), so the tool list is final before anything can ask for it",
+        "test/custom-tools.test.js: 'a model-supplied argument is data, never a shell' — the semicolon test",
+        "docs/GUIDE.md: 'Your own tools (no code required)' — the five guards and what is not supported"
       ],
-      "note": "Adding a tool means editing src/tools.js. Fine for one maintainer, a wall for anybody else."
+      "note": "Three ways in, none of which require editing src/tools.js: a JSON manifest for a command you already run (src/custom-tools.js), an MCP server for someone else's tools (src/mcp.js), and a built-in for contributors. Manifest tools are always behind the approval gate — there is no trusted-server opt-out, because the arguments come from the model rather than from code you can read first."
     },
     {
       "id": "scheduled-agents",

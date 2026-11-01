@@ -8,6 +8,7 @@
  * configured. Everything else in the repo hangs off this file.
  */
 import { config } from "./config.js";
+import { startCustomTools } from "./custom-tools.js";
 import { createPinchServer, lanAddresses, status } from "./server.js";
 import { startChannels } from "./channels/index.js";
 import { brain } from "./brain.js";
@@ -81,6 +82,25 @@ async function main() {
   // existed. Tools have to be settled before anything can ask for them.
   // A server that fails to start is skipped, not fatal.
   let mcp = { stop: async () => {} };
+
+  // Your own tools, from a JSON manifest. Registered beside MCP for the same
+  // reason: before listen(), so nothing can ask for the tool list before it is
+  // final. A bad manifest is logged and skipped, never fatal.
+  if (config.customToolsPath) {
+    const custom = await startCustomTools({
+      registerTool,
+      path: config.customToolsPath,
+      workspaceRoots: config.workspaceRoots,
+      log,
+    });
+    if (custom.registered.length) {
+      log.info(`custom tools: ${custom.registered.length} from ${config.customToolsPath} (each call needs your approval)`);
+    }
+    if (custom.skipped.length) {
+      log.warn(`custom tools: ${custom.skipped.length} entr${custom.skipped.length === 1 ? "y" : "ies"} skipped`);
+    }
+  }
+
   if (config.mcpSpec) {
     mcp = await startMcpTools({ registerTool, log });
     if (mcp.registered.length) log.info(`mcp: ${mcp.registered.length} tool(s) from ${mcp.servers.length} server(s)`);

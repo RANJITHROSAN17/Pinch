@@ -143,7 +143,7 @@ The two files that decide whether you trust this with a shell are
 
 ## What's inside
 
-22 tools. The five that change something ask permission first.
+22 built-in tools. The five that change something ask permission first. Add your own from a JSON manifest — no code, and every call still asks.
 
 |  | Tools |
 |---|---|

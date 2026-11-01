@@ -104,6 +104,10 @@ export const config = Object.freeze({
   // simply refuses to start an agent turn with nobody watching.
   scheduledRuns: !/^(0|false|off|no)$/i.test(env.PINCH_SCHEDULED_RUNS || ""),
   mcpSpec: env.PINCH_MCP || "",
+  // Path to a JSON manifest of your own tools. Empty means none: nothing is
+  // discovered implicitly, because a file the user did not point at is a file the
+  // user did not review.
+  customToolsPath: env.PINCH_TOOLS || "",
   mcpTrusted: env.PINCH_MCP_TRUSTED || "",
   numCtx: Number(env.PINCH_NUM_CTX || 8192),
   numPredict: Number(env.PINCH_NUM_PREDICT || 2048),
