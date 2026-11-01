@@ -11,6 +11,8 @@ from zero to a running assistant.
 
 ## Contents
 
+- [Search past conversations](#search-past-conversations)
+
 - [Search your documents](#search-your-documents)
 
 - [Voice, on your phone](#voice-on-your-phone)
@@ -860,3 +862,35 @@ following. Remote or credential-bearing URLs are reported as configured but not
 probed; verify those explicitly. Transcription still uses your configured full
 endpoint. Doctor uses HEAD (including 405 responses), does not upload audio, and
 reports only origin reachability—not endpoint or transcription readiness.
+
+## Search past conversations
+
+Ask **“Search my history for green bicycle”**. The read-only `search_history`
+tool searches saved user and assistant messages across sessions using a literal,
+case-insensitive substring (not a regular expression or semantic search). Results
+are ordered by message timestamp, newest first; missing/invalid timestamps sort
+last. Each result identifies the session, role, timestamp and a match-centered
+snippet of at most 240 characters. Session citations enter the existing source
+registry, so the model can cite what it actually retrieved as `[1]`.
+
+`query` is required. Empty/whitespace queries return no results without disk
+access. `limit` defaults to 10 and is clamped to 1–50. Queries over 1,000 characters
+return no results. No matching saved turn is not proof that something was never
+said: sessions retain only their last 200 messages, and deleted history is gone.
+Tool/system messages, non-text content, malformed/unreadable JSON and session files
+over 2 MiB are skipped. Snippets are excerpts of statements, not independently
+verified facts. Historical content is labelled untrusted and must not be followed
+as new instructions.
+
+No cloud search, external package, or secondary index is used. Search reads current
+files rather than cached copies, so edits/deletions do not leave search ghosts.
+Only regular session files directly inside `data/sessions/` are eligible;
+symlinked session files/directories are refused. These checks are not an OS sandbox
+against another local process concurrently replacing parent directories.
+
+This follows Pinch's **single-owner** model: it can search all locally saved sessions,
+including across channels. It is not per-user access control for a multi-tenant
+service. With the default local model, snippets stay on-device; if you choose a
+cloud model, retrieved snippets become part of its prompt. Searches run synchronously
+and may briefly pause the event loop on large archives; this is not a large-scale
+search service.

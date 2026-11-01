@@ -12,7 +12,7 @@
  * re-reads; writes are still synchronous and still atomic, because a debounced
  * write trades durability for a millisecond and this is someone's chat history.
  */
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, readdirSync, unlinkSync, openSync, fsyncSync, closeSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, readdirSync, unlinkSync, openSync, fsyncSync, closeSync, lstatSync, realpathSync, fstatSync, readSync, constants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { config } from "./config.js";
 
@@ -160,6 +160,67 @@ export function sessionPath(id) {
     throw new Error("invalid session id");
   }
   return file;
+}
+
+/** Search persisted user/assistant turns, never the stale parsed-file cache.
+ * Literal, case-insensitive substring search; newest message timestamp first.
+ * Empty queries return before any filesystem access. No query becomes a path.
+ * Root/file symlinks are refused; O_NOFOLLOW guards the final component when
+ * supported. Like the rest of this store, this is not a sandbox against a local
+ * process concurrently replacing parent directories.
+ */
+export function searchSessions(query, { limit = 10 } = {}) {
+  if (typeof query !== "string" || !query.trim()) return [];
+  const needle = query.trim().toLowerCase();
+  if (needle.length > 1000) return [];
+  const count = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 10;
+  let root, entries;
+  try {
+    if (!lstatSync(SESSIONS).isDirectory()) return [];
+    root = realpathSync(SESSIONS);
+    entries = readdirSync(SESSIONS, { withFileTypes: true });
+  } catch { return []; }
+  const hits = [];
+  // Stable ordering for equal/missing timestamps, independent of filesystem order.
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,99}\.json$/.test(entry.name)) continue;
+    const file = join(SESSIONS, entry.name);
+    let fd;
+    try {
+      if (!lstatSync(file).isFile() || dirname(realpathSync(file)) !== root) continue;
+      fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
+      const info = fstatSync(fd);
+      const maxBytes = 2 * 1024 * 1024;
+      if (!info.isFile() || info.size > maxBytes) continue;
+      const buffer = Buffer.alloc(maxBytes + 1);
+      let size = 0, n;
+      while (size < buffer.length && (n = readSync(fd, buffer, size, buffer.length - size, null))) size += n;
+      if (size > maxBytes) continue;
+      const session = JSON.parse(buffer.subarray(0, size).toString("utf8"));
+      if (!Array.isArray(session?.messages)) continue;
+      // Derive identity from the confined filename, never an untrusted JSON id.
+      const sessionId = entry.name.slice(0, -5);
+      for (const message of session.messages) {
+        if (!message || !["user", "assistant"].includes(message.role) || typeof message.content !== "string") continue;
+        const at = message.content.toLowerCase().indexOf(needle);
+        if (at < 0) continue;
+        const text = message.content;
+        const start = Math.max(0, at - 60);
+        const prefix = start ? "…" : "";
+        const available = 240 - prefix.length;
+        let snippet = prefix + text.slice(start, start + available);
+        if (start + available < text.length) snippet = snippet.slice(0, 239) + "…";
+        const date = typeof message.at === "string" ? Date.parse(message.at) : NaN;
+        const ts = Number.isFinite(date) ? new Date(date).toISOString() : null;
+        hits.push({ sessionId, role: message.role, snippet, ts });
+        hits.sort((a, b) => (b.ts === null ? -Infinity : Date.parse(b.ts)) - (a.ts === null ? -Infinity : Date.parse(a.ts)));
+        if (hits.length > count) hits.length = count;
+      }
+    } catch { /* malformed, unreadable, deleted or replaced file: skip */ }
+    finally { if (fd !== undefined) closeSync(fd); }
+  }
+  return hits;
 }
 
 export function loadSession(id) {
