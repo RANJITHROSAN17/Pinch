@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pinchworks/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/pinchworks/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="tests" src="https://img.shields.io/badge/tests-344%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-22-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
@@ -44,13 +44,13 @@
 | **Tools** | 22, five of which ask before they change anything |
 | **Runtime dependencies** | Zero |
 | **Licence** | MIT — free, no account, no subscription |
-| **Landing page** | https://pinchworks.github.io/Pinch/ |
-| **Source** | [github.com/pinchworks/Pinch](https://github.com/pinchworks/Pinch) |
+| **Landing page** | https://pinchfoundry.github.io/Pinch/ |
+| **Source** | [github.com/pinchfoundry/Pinch](https://github.com/pinchfoundry/Pinch) |
 
 ## Install it in two commands
 
 ```bash
-git clone https://github.com/pinchworks/Pinch && cd Pinch
+git clone https://github.com/pinchfoundry/Pinch && cd Pinch
 npm run setup     # one guided command: model → channels → voice → key
 npm start         #     http://localhost:7777
 ```

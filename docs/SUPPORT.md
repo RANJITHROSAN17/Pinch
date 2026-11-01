@@ -80,5 +80,5 @@ OpenRouter). Local is the default; cloud is a choice you make in `.env`.
 | `docs/SUPPORT.md` | this file — the decision, written down where a human can argue with it |
 
 If a supported combination breaks, that is a bug worth
-[filing](https://github.com/pinchworks/Pinch/issues). If an *unsupported* one breaks,
+[filing](https://github.com/pinchfoundry/Pinch/issues). If an *unsupported* one breaks,
 the honest fix is to upgrade your Node.

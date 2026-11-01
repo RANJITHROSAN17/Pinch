@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://pinchworks.github.io/Pinch/sitemap.xml
+Sitemap: https://pinchfoundry.github.io/Pinch/sitemap.xml
