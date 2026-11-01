@@ -11,6 +11,8 @@ from zero to a running assistant.
 
 ## Contents
 
+- [Switch models without restarting](#switch-models-without-restarting)
+
 - [Search past conversations](#search-past-conversations)
 
 - [Search your documents](#search-your-documents)
@@ -894,3 +896,57 @@ service. With the default local model, snippets stay on-device; if you choose a
 cloud model, retrieved snippets become part of its prompt. Searches run synchronously
 and may briefly pause the event loop on large archives; this is not a large-scale
 search service.
+
+## Switch models without restarting
+
+Use the same commands in Telegram, Discord, Slack, WhatsApp, or the web chat:
+
+- `/model` — show the active provider/model and installed Ollama models.
+- `/model coder:7b` — select an installed local Ollama model (replace the name with
+  one returned by `/model`). A name without a tag can resolve to its installed `:latest` tag.
+- `/model ollama/coder:7b` — the explicit form of the same local selection.
+- `/model openai/gpt-4.1` — select a model on your **already configured**
+  OpenAI-compatible endpoint. Requires `OPENAI_API_KEY`; does not change the URL or key.
+- `/model default` — return to the provider/model loaded from `.env` at boot.
+
+A bare name always means local Ollama, even if a cloud provider is currently active.
+Cloud use is explicit: selecting `openai/…` may send conversation history and tool
+results to the configured endpoint, and may incur charges. Model names are not
+proof of availability or capabilities; local names are validated against Ollama's
+`/api/tags`, while cloud identifiers are validated in shape only and sent to the API
+on the next turn. Local selection never pulls a model automatically.
+Model names are bounded to 200 ASCII characters: letters/digits first, then
+letters, digits, `.`, `_`, `:`, `/`, `@`, `+`, `-`; markup and control characters
+are rejected.
+
+Switches apply **globally to subsequent turns** under Pinch's single-owner trust
+model. Every turn snapshots its provider/model before its tool loop starts, so a
+switch during an approval or tool call cannot redirect the remainder of that turn.
+Health, `/status`, and per-turn telemetry reflect the runtime selection. The
+shared context/token budget remains configured separately; switching does not
+infer a new context-window size from a model's name.
+
+The override is in memory only. Restarting restores `.env` defaults. Pinch does
+not rewrite `.env` or create a runtime settings file. Invalid models, unsupported
+providers, unavailable Ollama, and missing cloud credentials leave the selection
+unchanged. This is runtime selection, not automatic failover or cloud fallback.
+
+### Model API
+
+`GET /api/models` retains the provider probe results (`ollama`, `openai`, `mock`)
+and adds `active: { provider, model }`. Ollama listing comes from `/api/tags`;
+cloud probe output only reflects configured defaults, not a complete cloud catalog.
+
+`POST /api/models` accepts JSON such as:
+
+```json
+{"provider":"ollama","model":"coder:7b"}
+```
+
+Use `Content-Type: application/json` and, when configured, `x-pinch-key`.
+All existing Host/Origin/API authorization checks apply before processing. The
+panel cookie alone is **not** API authorization. No endpoint URL or credential
+fields are accepted. Successful selection returns `{ "active": { "provider":
+"ollama", "model": "coder:7b" } }`; invalid input returns 400, unavailable Ollama
+502, unauthorized requests 401, disallowed Host/Origin 403. Other methods return
+405. Listing is cached briefly; selecting a local model validates a fresh list.

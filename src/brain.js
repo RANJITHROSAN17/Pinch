@@ -177,6 +177,7 @@ const ollama = {
   async probe() {
     const res = await fetch(`${config.llm.ollamaUrl}/api/tags`, {
       signal: AbortSignal.timeout(2500),
+      redirect: "error",
     });
     if (!res.ok) throw new Error(`ollama HTTP ${res.status}`);
     const json = await res.json();
@@ -436,14 +437,76 @@ function toCall(id, name, rawArgs) {
 const PROVIDERS = { ollama, openai, mock };
 
 let probeCache = null;
+let runtimeModel = null;
+
+function configuredModel() {
+  const provider = Object.hasOwn(PROVIDERS, config.llm.provider) ? config.llm.provider : "ollama";
+  return { provider, model: provider === "ollama" ? config.llm.ollamaModel : provider === "openai" ? config.llm.openaiModel : "mock" };
+}
+
+function modelError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+/** One command implementation for messaging channels and the web SSE endpoint.
+ * Bare names select local Ollama. Sending history to a cloud provider requires
+ * an explicit `openai/` prefix and a server-side configured credential/endpoint.
+ */
+export async function modelCommand(text) {
+  const match = /^\/model(?:\s+([\s\S]*))?$/i.exec(String(text).trim());
+  if (!match) return null;
+  const requested = (match[1] || "").trim();
+  if (requested) {
+    try {
+      if (requested === "default") brain.resetModel();
+      else {
+        const prefixed = /^(ollama|openai|mock)\/(.+)$/.exec(requested);
+        await brain.setModel({ provider: prefixed ? prefixed[1] : "ollama", model: prefixed ? prefixed[2] : requested });
+      }
+      const active = brain.active;
+      return `🦞 Active model: ${active.provider} / ${active.model}. Applies globally to new turns; .env is unchanged.`;
+    } catch (err) { return `🦞 Model unchanged: ${err.message}`; }
+  }
+  const models = await brain.probe();
+  const active = brain.active;
+  const local = models.ollama.ok ? models.ollama.models.join(", ") || "none installed" : "unavailable";
+  return `🦞 Active model: ${active.provider} / ${active.model}\nLocal Ollama models: ${local}\nUse /model <local-name>, /model openai/<name> (configured endpoint; may send history remotely), or /model default. Changes apply globally to new turns and reset on restart.`;
+}
 
 export const brain = {
-  get provider() {
-    return PROVIDERS[config.llm.provider] || ollama;
+  get active() { return Object.freeze({ ...(runtimeModel || configuredModel()) }); },
+
+  get provider() { return PROVIDERS[this.active.provider]; },
+
+  resetModel() { runtimeModel = null; },
+
+  async setModel(selection) {
+    if (!selection || typeof selection !== "object" || Array.isArray(selection)) throw modelError("Expected { provider, model }.");
+    if (Object.keys(selection).some((key) => !["provider", "model"].includes(key))) throw modelError("Only provider and model can be changed at runtime.");
+    const { provider, model } = selection;
+    if (typeof provider !== "string" || !Object.hasOwn(PROVIDERS, provider)) throw modelError("Provider must be ollama, openai or mock.");
+    if (typeof model !== "string" || model.length > 200 || !/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(model)) throw modelError("Model must use letters, digits, dots, underscores, colons, slashes, @, + or - (max 200 characters).");
+    let selected = model;
+    if (provider === "ollama") {
+      let available;
+      try { available = (await ollama.probe()).models; }
+      catch { throw modelError("Ollama is unreachable; start it with ollama serve and retry.", 502); }
+      if (!available.includes(selected) && available.includes(`${selected}:latest`)) selected += ":latest";
+      if (!available.includes(selected)) throw modelError("Model is not installed in Ollama; pull it first or choose a listed model.");
+    }
+    if (provider === "openai" && !config.llm.openaiKey) throw modelError("OPENAI_API_KEY is not configured; configure the endpoint and key before selecting openai.");
+    if (provider === "mock" && model !== "mock") throw modelError("The mock provider only supports model 'mock'.");
+    // No URL, credential or .env mutation is accepted through this interface.
+    runtimeModel = Object.freeze({ provider, model: selected });
+    probeCache = null;
+    return this.active;
   },
 
   chat(messages, options = {}) {
-    return this.provider.chat(messages, options);
+    const { selection = this.active, ...rest } = options;
+    return PROVIDERS[selection.provider].chat(messages, { ...rest, model: rest.model || selection.model });
   },
 
   /** Probe every provider, cached for 30 s — the panel asks on every load. */
