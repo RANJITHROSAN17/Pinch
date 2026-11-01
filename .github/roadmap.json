@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "description": "Human-reviewed contributor queue. The bot reads this file and nothing else. Every entry is reviewed in a normal pull request, which is the point: an agent that decides at runtime what to build will duplicate, hallucinate, and file issues nobody can action.",
-    "owner": "RANJITHROSAN17",
+    "owner": "pinchworks",
     "reply_sla_hours": 24,
     "open_easy_cap": 3,
     "created_labels": [

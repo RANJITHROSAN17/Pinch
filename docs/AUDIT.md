@@ -493,7 +493,7 @@ finding 1.
 ## How to reproduce this audit
 
 ```bash
-git clone https://github.com/RANJITHROSAN17/Pinch && cd pinch
+git clone https://github.com/pinchworks/Pinch && cd Pinch
 npm install --omit=dev         # zero dependencies; this just writes nothing
 
 # the whole suite, including every regression test above
