@@ -12,6 +12,8 @@
 <title>Pinch — a local-first personal AI assistant with zero runtime dependencies</title>
 <meta name="description" content="Pinch is a private, local-first personal AI assistant for Telegram, Discord, Slack and WhatsApp. Runs on your machine with Ollama. Zero runtime dependencies.">
 <link rel="canonical" href="https://pinchworks.github.io/Pinch/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="robots" content="index, follow, max-image-preview:large">
 
 <meta property="og:type" content="website">
@@ -72,7 +74,8 @@
   }
   .wrap{max-width:860px;margin:0 auto;padding:56px 24px 80px}
   header{display:flex;align-items:center;gap:14px;margin-bottom:36px}
-  .mark{font-size:40px;line-height:1}
+  .mark{display:block;width:52px;height:52px}
+  .mark svg{width:100%;height:100%;display:block}
   h1{font-size:clamp(28px,5vw,42px);line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
   h2{font-size:20px;margin:44px 0 14px;letter-spacing:-.01em}
   .lede{font-size:19px;color:var(--muted);margin:0 0 28px;max-width:60ch}
@@ -117,7 +120,7 @@
 <div class="wrap">
 
 <header>
-  <span class="mark" aria-hidden="true">🦞</span>
+  <span class="mark" aria-hidden="true"><svg class="pinch-mark" width="28" height="28" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><linearGradient id="pinchMarkGrad" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0%" stop-color="#ff8f6b"/><stop offset="55%" stop-color="#ff6a4d"/><stop offset="100%" stop-color="#e0502f"/></linearGradient></defs><path d="M 15 92 L 16 87 L 17 82 L 18 76 L 19 71 L 19 66 L 20 62 L 21 58 L 22 54 L 23 50 L 25 47 L 26 44 L 27 42 L 29 41 L 30 41 L 30 41 L 31 41 L 31 41 L 32 42 L 34 43 L 36 45 L 38 47 L 42 50 L 53 37 L 49 34 L 45 31 L 41 29 L 37 28 L 33 28 L 29 28 L 25 30 L 22 32 L 20 35 L 19 38 L 18 41 L 17 44 L 16 48 L 15 52 L 15 56 L 14 61 L 14 66 L 14 71 L 13 76 L 13 81 L 12 86 L 12 92 L 14 91 L 14 91 L 13 91 L 13 91 L 12 91 L 12 91 L 12 92 L 12 92 L 12 93 L 12 93 L 12 93 L 13 94 Z" fill="url(#pinchMarkGrad)"/><path d="M 107 92 L 107 86 L 106 81 L 106 76 L 105 71 L 105 66 L 105 61 L 104 56 L 104 52 L 103 48 L 102 44 L 101 41 L 100 38 L 99 35 L 97 32 L 94 30 L 90 28 L 86 28 L 82 28 L 78 29 L 74 31 L 70 34 L 66 37 L 77 50 L 81 47 L 83 45 L 85 43 L 87 42 L 88 41 L 88 41 L 89 41 L 89 41 L 90 41 L 92 42 L 93 44 L 94 47 L 96 50 L 97 54 L 98 58 L 99 62 L 100 66 L 100 71 L 101 76 L 102 82 L 103 87 L 104 92 L 104 91 L 104 92 L 104 92 L 104 92 L 104 93 L 104 93 L 104 94 L 105 94 L 105 94 L 106 94 L 106 94 L 106 94 Z" fill="url(#pinchMarkGrad)"/></svg></span>
   <strong>Pinch</strong>
 </header>
 
@@ -137,7 +140,7 @@
 
 <pre><code>git clone https://github.com/pinchworks/Pinch &amp;&amp; cd Pinch
 npm run setup     <span class="c"># one guided command: model → channels → voice → key</span>
-npm start         <span class="c"># 🦞  http://localhost:7777</span></code></pre>
+npm start         <span class="c">#     http://localhost:7777</span></code></pre>
 
 <h2>What it actually does</h2>
 <ul>
@@ -212,7 +215,7 @@ npm start         <span class="c"># 🦞  http://localhost:7777</span></code></p
     <a href="https://github.com/pinchworks/Pinch">GitHub</a> ·
     <a href="https://github.com/pinchworks/Pinch/blob/main/docs/GUIDE.md">Guide</a> ·
     <a href="https://github.com/pinchworks/Pinch/blob/main/docs/AUDIT.md">Security audit</a> ·
-    built to run on a laptop, in a room, for one person · 🦞
+    built to run on a laptop, in a room, for one person
   </p>
 </footer>
 

@@ -770,4 +770,4 @@ gate, workspace sandbox, honest guard". All three were real. The sandbox still h
 and the right response to finding it is this document — not a quiet patch, and not a
 deleted paragraph in the README.
 
-🦞
+

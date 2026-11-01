@@ -1,9 +1,9 @@
 blank_issues_enabled: true
 contact_links:
-  - name: "🦞 Good first issues (curated queue)"
+  - name: "Good first issues (curated queue)"
     url: "https://github.com/pinchworks/Pinch/labels/good%20first%20issue"
     about: "Human-reviewed, self-contained tasks with exact file paths and verification commands."
-  - name: "🔒 Report a security vulnerability privately"
+  - name: "Report a security vulnerability privately"
     url: "https://github.com/pinchworks/Pinch/security/advisories/new"
     about: "Please do NOT open a public issue for security bugs — see SECURITY.md."
   - name: "📖 Setup & troubleshooting guide"

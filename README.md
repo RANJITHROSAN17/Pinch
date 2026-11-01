@@ -2,7 +2,11 @@
   <img src="./assets/banner.svg" width="100%" alt="Pinch — a personal AI assistant that lives on your own machine" />
 </p>
 
-<h1 align="center">🦞 Pinch — a local-first personal AI assistant</h1>
+<h1 align="center">
+  <img src="./assets/mark.svg" width="64" height="64" alt="" />
+  <br />
+  Pinch — a local-first personal AI assistant
+</h1>
 
 <p align="center">
   <b>A personal AI assistant that runs on your own computer.</b><br/>
@@ -48,7 +52,7 @@
 ```bash
 git clone https://github.com/pinchworks/Pinch && cd Pinch
 npm run setup     # one guided command: model → channels → voice → key
-npm start         # 🦞  http://localhost:7777
+npm start         #     http://localhost:7777
 ```
 
 `npm run setup` checks your model, writes `.env`, generates a key, and prints the URL to
@@ -214,5 +218,5 @@ Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUD
 ---
 
 <p align="center">
-  <sub>MIT licensed · built to run on a laptop, in a room, for one person · 🦞</sub>
+  <sub>MIT licensed · built to run on a laptop, in a room, for one person</sub>
 </p>

@@ -1,4 +1,4 @@
-# Contributing to Pinch 🦞
+# Contributing to Pinch
 
 Pinch is a personal project that happens to be useful to other people. Contributions are
 welcome, especially the kind that make it **safer** or **work in more places**.
