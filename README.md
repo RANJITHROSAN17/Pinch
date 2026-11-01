@@ -25,13 +25,17 @@
 
 <p align="center">
   <a href="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-344%20passing-4dd6c1" />
-  <img alt="tools" src="https://img.shields.io/badge/tools-24-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
-  <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
+  <a href="docs/AUDIT.md"><img alt="Security review and known limitations" src="https://img.shields.io/badge/security-review%20%26%20limits-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
   <a href="https://github.com/pinchfoundry/Pinch/discussions"><img alt="discussions" src="https://img.shields.io/badge/discussions-open-ff6a4d?logo=github" /></a>
 </p>
+
+## Try it before connecting your accounts
+
+Clone the repository, enter its directory, and run `npm run demo` with Node.js 22+. This uses a **canned brain**: it demonstrates the interaction flow, not a real model’s reasoning quality. You do not need a bot token or cloud API key for that demo. **Demo mode disables the panel key and is not a security sandbox; keep it on a trusted local machine and do not expose or forward its port.**
+
+For real use, follow the guided setup below, then run `npm run doctor` and `npm run brain`. Try a harmless read-only question before granting approvals for file changes or commands. Local inference is the default; optional cloud providers and messaging services have their own data boundaries. Read [the guide](docs/GUIDE.md) and [security limitations](docs/AUDIT.md) before exposing the panel or enabling powerful tools.
 
 ## Facts
 
@@ -42,7 +46,7 @@
 | **Runs on** | Linux, macOS, Windows — Node.js 22+ |
 | **Model** | Local by default (Ollama); any OpenAI-compatible API optionally |
 | **Channels** | Telegram, Discord, Slack, WhatsApp, web panel (installable PWA) |
-| **Tools** | 22, five of which ask before they change anything |
+| **Tools** | See the [capability inventory](docs/CAPABILITIES.json) for implemented tools, boundaries and test evidence |
 | **Runtime dependencies** | Zero |
 | **Licence** | MIT — free, no account, no subscription |
 | **Landing page** | https://pinchfoundry.github.io/Pinch/ |
