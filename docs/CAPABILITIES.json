@@ -52,12 +52,16 @@
         "model provider",
         "choose model"
       ],
-      "status": "partial",
+      "status": "have",
       "policy": "in-scope",
       "evidence": [
-        "src/config.js: LLM_PROVIDER and OLLAMA_MODEL are read from .env at boot"
+        "src/brain.js: active/setModel/resetModel, fresh Ollama installed-model validation and runtime provider dispatch",
+        "src/channels/router.js: shared /model command before the agent loop; src/server.js: web SSE command interception and protected GET/POST /api/models",
+        "src/agent.js: provider/model snapshot per tool loop, accurate runtime model telemetry",
+        "test/agent.test.js: actual local/cloud requests, cross-channel commands, unchanged .env and in-flight model isolation",
+        "test/http-surface.test.js: keyed API, foreign Origin/Host and cookie-only rejection, web command and reset-on-restart tests"
       ],
-      "note": "Changing model means editing .env and restarting. Every comparable product has a picker."
+      "note": "Memory-only global override, reset on restart; never rewrites .env. Bare /model names select installed Ollama models; cloud requires explicit openai/<name> and preconfigured endpoint/key. In-flight turns retain their initial selection. Cloud model identifiers are passed to the configured API, not verified by a cloud listing or generation probe."
     },
     {
       "id": "streaming",

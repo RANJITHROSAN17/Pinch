@@ -188,6 +188,7 @@ export async function runAgent({
   autonomy = "interactive",
   allowSchedule = true,
 }) {
+  const activeModel = brain.active; // Pin provider/model for the entire tool loop.
   const unattended = autonomy === "unattended";
   const startedAt = Date.now();
   const session = loadSession(sessionId);
@@ -263,6 +264,7 @@ export async function runAgent({
       // Stream the model's words straight to whoever is waiting. Tool rounds
       // usually produce no text, so this costs nothing when it does not apply.
       out = await brain.chat(messages, {
+        selection: activeModel,
         tools: toolSchemas(),
         onDelta: (chunk) => {
           streamed += chunk;
@@ -272,8 +274,7 @@ export async function runAgent({
     } catch (err) {
       finalText =
         `🦞 My brain is unreachable: ${err.message}\n\n` +
-        `Check that \`LLM_PROVIDER=${config.llm.provider}\` is running — for Ollama that is ` +
-        `\`ollama serve\` and \`ollama pull ${config.llm.ollamaModel}\`.`;
+        `Check ${activeModel.provider} / ${activeModel.model}; for Ollama use \`ollama serve\` and pull the selected model.`;
       break;
     }
 
@@ -462,10 +463,10 @@ export async function runAgent({
     sessionId,
     channel,
     autonomy,
-    provider: config.llm.provider,
+    provider: activeModel.provider,
     // Which model, not just which vendor: a price table keys on the model, and
     // "we spent tokens on openai" is not a number anyone can act on.
-    model: config.llm.provider === "ollama" ? config.llm.ollamaModel : config.llm.openaiModel,
+    model: activeModel.model,
     ms,
     rounds,
     tokens,

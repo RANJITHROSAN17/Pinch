@@ -12,7 +12,7 @@ import { join, normalize, extname, resolve, sep } from "node:path";
 import { networkInterfaces } from "node:os";
 import { extract, putAttachment, takeAttachments, MAX_BYTES } from "./attachments.js";
 import { config } from "./config.js";
-import { brain } from "./brain.js";
+import { brain, modelCommand } from "./brain.js";
 import { runAgent, answerApproval, pendingApprovals, pendingApprovalsFor, answerApprovalFor } from "./agent.js";
 import {
   ensureData, loadMemory, saveMemory, remember, forget,
@@ -288,11 +288,8 @@ async function handleApi(req, res, url) {
     return json(res, 200, {
       ok: true,
       owner: config.ownerName,
-      provider: config.llm.provider,
-      model:
-        config.llm.provider === "ollama" ? config.llm.ollamaModel
-        : config.llm.provider === "mock" ? "mock (no model)"
-        : config.llm.openaiModel,
+      provider: brain.active.provider,
+      model: brain.active.provider === "mock" ? "mock (no model)" : brain.active.model,
       channels: status.channels,
       memoryFacts: loadMemory().facts.length,
       pendingReminders: pendingReminders().length,
@@ -317,7 +314,16 @@ async function handleApi(req, res, url) {
   }
 
   if (path === "/api/models") {
-    return json(res, 200, await brain.probe());
+    if (req.method === "GET") return json(res, 200, { ...(await brain.probe()), active: brain.active });
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      try { return json(res, 200, { active: await brain.setModel(body) }); }
+      catch (err) {
+        // Only our selection-validation errors are safe to reflect.
+        return json(res, err.status === 502 ? 502 : 400, { error: err.status ? err.message : "Unable to select the model." });
+      }
+    }
+    return json(res, 405, { error: "Use GET to list models or POST to select one." });
   }
 
   if (path === "/api/sessions" && req.method === "GET") {
@@ -404,7 +410,12 @@ async function handleApi(req, res, url) {
       }
     }
     try {
-        const attachments = takeAttachments(body.attachments, sessionId);
+      const modelReply = await modelCommand(text);
+      if (modelReply !== null) {
+        stream.send("final", { text: modelReply, trace: [], sessionId });
+        return stream.close();
+      }
+      const attachments = takeAttachments(body.attachments, sessionId);
       const result = await runAgent({
         sessionId,
         text,

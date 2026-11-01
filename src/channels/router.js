@@ -6,6 +6,7 @@
  * Pinch behaves identically in Telegram, Discord, Slack, WhatsApp and web.
  */
 import { runAgent, answerApproval, answerApprovalFor, pendingApprovalsFor } from "../agent.js";
+import { brain, modelCommand } from "../brain.js";
 import { config } from "../config.js";
 
 const YES = /^(y|yes|yeah|yep|ok|okay|allow|approve|go|do it|sure)\.?!?$/i;
@@ -64,6 +65,12 @@ export async function routeMessage({ channel, text, send, sessionId, target = ""
     }
   }
 
+  const modelReply = await modelCommand(trimmed);
+  if (modelReply !== null) {
+    await send(modelReply);
+    return { handled: true, kind: "model" };
+  }
+
   // 2) Built-in commands, available identically everywhere.
   if (/^\/(start|help)\b/i.test(trimmed)) {
     await send(
@@ -72,7 +79,7 @@ export async function routeMessage({ channel, text, send, sessionId, target = ""
         `• read/write code and run commands (you approve each one)\n` +
         `• search the web, do maths, remember facts\n` +
         `• keep tasks, explain errors, plan projects\n\n` +
-        `Commands: /help · /reset (new session) · /status\n` +
+        `Commands: /help · /reset (new session) · /status · /model\n` +
         `When I ask to run something, reply **yes** or **no**.`
     );
     return { handled: true, kind: "help" };
@@ -87,7 +94,7 @@ export async function routeMessage({ channel, text, send, sessionId, target = ""
     const pending = pendingApprovalsFor(sessionId || `${channel}-main`);
     await send(
       `🦞 **Status**\n` +
-        `Brain: ${config.llm.provider} / ${config.llm.provider === "ollama" ? config.llm.ollamaModel : config.llm.openaiModel}\n` +
+        `Brain: ${brain.active.provider} / ${brain.active.model}\n` +
         `Workspace: ${config.workspaceRoots.join(", ")}\n` +
         `Approvals waiting: ${pending.length}\n` +
         `Channel: ${channel}`

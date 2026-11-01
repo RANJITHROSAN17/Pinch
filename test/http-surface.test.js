@@ -241,3 +241,73 @@ test("voice: hung Whisper aborts and HTTP server remains healthy", async () => {
     await new Promise((r) => upstream.close(r));
   }
 });
+
+test("models API: authenticated runtime changes preserve Origin/Host guards and web commands", async () => {
+  const tags = http.createServer((req, res) => {
+    assert.equal(req.url, "/api/tags");
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ models: [{ name: "fast:latest" }, { name: "coder:7b" }] }));
+  });
+  await new Promise((r) => tags.listen(0, "127.0.0.1", r));
+  const reserve = http.createServer();
+  await new Promise((r) => reserve.listen(0, "127.0.0.1", r));
+  const port = reserve.address().port;
+  await new Promise((r) => reserve.close(r));
+  const data = mkdtempSync(join(tmpdir(), "pinch-models-"));
+  const env = { ...process.env, LLM_PROVIDER: "mock", PINCH_KEY: "models-test-key", PINCH_HOST: "127.0.0.1", PINCH_PORT: String(port), PINCH_DATA: data, TELEGRAM_TOKEN: "", OPENAI_API_KEY: "", OLLAMA_URL: `http://127.0.0.1:${tags.address().port}` };
+  const launch = () => spawn(process.execPath, [join(root, "src", "index.js")], { cwd: root, env, stdio: "ignore" });
+  let proc = launch();
+  const call = (method, path, body = null, headers = {}) => new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, path, method, agent: false, headers: { "content-type": "application/json", "x-pinch-key": "models-test-key", ...headers } }, (res) => {
+      let text = "";
+      res.on("data", (c) => text += c);
+      res.on("end", () => resolve({ status: res.statusCode, text }));
+    });
+    req.on("error", reject);
+    req.end(body === null ? undefined : JSON.stringify(body));
+  });
+  const ready = async () => {
+    for (let i = 0; i < 100; i++) {
+      try { if ((await call("GET", "/api/health")).status === 200) return; } catch {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error("model test server did not start");
+  };
+  try {
+    await ready();
+    const initial = JSON.parse((await call("GET", "/api/models")).text);
+    assert.equal(initial.active.provider, "mock");
+    assert.deepEqual(initial.ollama.models, ["fast:latest", "coder:7b"]);
+    const selection = { provider: "ollama", model: "coder:7b" };
+    assert.equal((await call("POST", "/api/models", selection, { "x-pinch-key": "" })).status, 401);
+    assert.equal((await call("POST", "/api/models", selection, { "x-pinch-key": "wrong" })).status, 401);
+    assert.equal((await call("POST", "/api/models", selection, { origin: "https://attacker.example" })).status, 403);
+    assert.equal((await call("POST", "/api/models", selection, { host: `attacker.example:${port}` })).status, 403);
+    // Cross-port pages must not gain ambient authority from the panel cookie.
+    assert.equal((await call("POST", "/api/models", selection, { origin: `http://127.0.0.1:${port + 1}`, "x-pinch-key": "", cookie: "pinch_key=models-test-key" })).status, 401);
+    assert.equal(JSON.parse((await call("GET", "/api/models")).text).active.provider, "mock");
+    assert.equal((await call("POST", "/api/models", selection, { origin: `http://127.0.0.1:${port}` })).status, 200);
+    assert.equal(JSON.parse((await call("GET", "/api/health")).text).model, "coder:7b");
+    assert.equal((await call("POST", "/api/models", { provider: "openai", model: "cloud-model" })).status, 400);
+    assert.equal((await call("POST", "/api/models", { provider: "ollama", model: "missing" })).status, 400);
+    assert.equal(JSON.parse((await call("GET", "/api/models")).text).active.model, "coder:7b");
+    assert.equal((await call("DELETE", "/api/models")).status, 405);
+    const web = await call("POST", "/api/chat", { text: "/model fast", sessionId: "switch-test" });
+    assert.equal(web.status, 200);
+    assert.match(web.text, /event: final/);
+    assert.match(web.text, /fast:latest/);
+    assert.equal(JSON.parse((await call("GET", "/api/models")).text).active.model, "fast:latest");
+    const stopped = new Promise((r) => proc.once("exit", r));
+    proc.kill("SIGTERM");
+    await stopped;
+    proc = launch();
+    await ready();
+    assert.equal(JSON.parse((await call("GET", "/api/models")).text).active.provider, "mock", "override resets on restart");
+  } finally {
+    const stopped = proc.exitCode === null && proc.signalCode === null ? new Promise((r) => proc.once("exit", r)) : Promise.resolve();
+    proc.kill("SIGKILL");
+    await stopped;
+    tags.closeAllConnections();
+    await new Promise((r) => tags.close(r));
+  }
+});
