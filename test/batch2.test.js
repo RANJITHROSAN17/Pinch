@@ -455,3 +455,32 @@ test("history: clamps result limits and skips oversized session files", async ()
     assert.deepEqual(searchSessions("bounded41"), []);
   } finally { rmSync(path, { force: true }); }
 });
+
+test("history: replacement during open cannot expose an outside session", async (t) => {
+  const { searchSessions, sessionPath } = await import("../src/store.js");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const inside = sessionPath("history-race");
+  const outside = join(dataDir, "outside-race.json");
+  fs.writeFileSync(inside, JSON.stringify({ messages: [] }));
+  fs.writeFileSync(outside, JSON.stringify({ messages: [{ role: "user", content: "raced-secret41" }] }));
+  const original = fs.openSync;
+  let replaced = false;
+  fs.openSync = (path, ...args) => {
+    if (path === inside && !replaced) {
+      fs.unlinkSync(inside);
+      try { fs.symlinkSync(outside, inside); replaced = true; }
+      catch (err) { if (err.code === "EPERM") { t.skip("symlink privilege unavailable"); } else throw err; }
+    }
+    return original(path, ...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.deepEqual(searchSessions("raced-secret41"), []);
+  } finally {
+    fs.openSync = original;
+    syncBuiltinESMExports();
+    rmSync(inside, { force: true });
+    rmSync(outside, { force: true });
+  }
+});

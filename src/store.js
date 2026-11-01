@@ -188,9 +188,12 @@ export function searchSessions(query, { limit = 10 } = {}) {
     const file = join(SESSIONS, entry.name);
     let fd;
     try {
-      if (!lstatSync(file).isFile() || dirname(realpathSync(file)) !== root) continue;
       fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
       const info = fstatSync(fd);
+      // Validate the opened descriptor, not a pre-open path check. On platforms
+      // without O_NOFOLLOW, reject links after opening and before reading bytes.
+      const current = lstatSync(file);
+      if (!current.isFile() || current.dev !== info.dev || current.ino !== info.ino || dirname(realpathSync(file)) !== root) continue;
       const maxBytes = 2 * 1024 * 1024;
       if (!info.isFile() || info.size > maxBytes) continue;
       const buffer = Buffer.alloc(maxBytes + 1);
