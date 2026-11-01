@@ -13,6 +13,9 @@ on:
       - ".github/workflows/roadmap-status-bot.yml"
   issues:
     types: [opened, closed]
+  workflow_run:
+    workflows: ["Contributor queue"]
+    types: [completed]
   schedule:
     - cron: "35 6 * * 1"
   workflow_dispatch:
