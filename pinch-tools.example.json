@@ -1,0 +1,39 @@
+{
+  "$comment": "Copy this to your own file, edit it, and point PINCH_TOOLS at it. Every tool here calls a program you already trust; Pinch never executes this file. Every call stops for your approval, always — there is no 'trusted' flag in this format.",
+  "tools": [
+    {
+      "name": "git_status_here",
+      "description": "Show the working tree status of the Pinch checkout: branch, changed files, untracked files.",
+      "command": "git",
+      "args": ["status", "--short", "--branch"],
+      "timeout_ms": 10000
+    },
+    {
+      "name": "notes_search",
+      "description": "Search your notes directory for a phrase and return the matching lines with file and line number.",
+      "command": "grep",
+      "args": ["-rn", "--color=never", "{{phrase}}", "/home/you/notes"],
+      "parameters": {
+        "phrase": {
+          "type": "string",
+          "description": "The text to search for",
+          "required": true
+        }
+      },
+      "timeout_ms": 15000
+    },
+    {
+      "name": "disk_free",
+      "description": "Report free space on the given mount point as one human-readable line.",
+      "command": "df",
+      "args": ["-h", "{{mount}}"],
+      "parameters": {
+        "mount": {
+          "type": "string",
+          "description": "Absolute path of the mount point, e.g. / or /home",
+          "required": true
+        }
+      }
+    }
+  ]
+}

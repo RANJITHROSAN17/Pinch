@@ -26,6 +26,7 @@ from zero to a running assistant.
 - [Command line](#command-line)
 - [What Pinch did](#what-pinch-did)
 - [Third-party tools (MCP)](#third-party-tools-mcp)
+- [Your own tools (no code required)](#your-own-tools-no-code-required)
 - [Configuration](#configuration)
 - [Extending it](#extending-it)
 - [This repo maintains itself (a little)](#this-repo-maintains-itself-a-little)
@@ -491,6 +492,91 @@ A server that fails to start is logged and skipped — it never stops Pinch
 booting. Tool output is wrapped in `<untrusted-source>` and treated as data,
 because a third-party tool is exactly as trustworthy as a web page you fetched.
 
+## Your own tools (no code required)
+
+MCP is the right answer for *someone else's* tools. It is a heavy answer for the
+one command you already run by hand every morning. For that there is a JSON file:
+
+```bash
+PINCH_TOOLS="$HOME/.pinch/tools.json"
+```
+
+```json
+{
+  "tools": [
+    {
+      "name": "deploy_status",
+      "description": "Show the current status of the deploy pipeline.",
+      "command": "curl",
+      "args": ["-s", "https://api.example.com/status"]
+    },
+    {
+      "name": "notes_search",
+      "description": "Search my notes for a phrase and return matching lines.",
+      "command": "grep",
+      "args": ["-rn", "{{phrase}}", "/home/me/notes"],
+      "parameters": {
+        "phrase": {
+          "type": "string",
+          "description": "Text to search for",
+          "required": true
+        }
+      }
+    }
+  ]
+}
+```
+
+Restart, and the boot log says what arrived:
+
+```
+● custom tools: 2 from /home/me/.pinch/tools.json (each call needs your approval)
+```
+
+A copy you can edit lives at [`pinch-tools.example.json`](../pinch-tools.example.json).
+
+**Pinch never executes the file.** It is data. You author a command that already
+works in your terminal; the model only fills in the arguments you declared. That
+is the entire trust model, so the rest of this section is the rules that keep it
+true.
+
+### What the manifest cannot do
+
+There is no `trusted` field. Every call to a manifest tool stops for approval,
+every time, and this is not configurable. MCP lets you trust a server because you
+can read its source; here the *arguments* come from the model, so there is
+nothing for you to have read in advance.
+
+### The five guards
+
+| Guard | Why it is there |
+| :--- | :--- |
+| **No shell** | Arguments are passed as an argv array. A model-supplied `ok; rm -rf ~` is one literal argument to your program, not two commands. |
+| **Executable pinned at load** | `git` is resolved to `/usr/bin/git` once, at boot. A later `PATH` change, or a same-named file in the working directory, cannot take its place. |
+| **No executable inside the workspace** | The agent can write to `PINCH_WORKSPACE`. A tool binary kept there could be replaced between the approval prompt and the call. Move the script outside the workspace, or narrow `PINCH_WORKSPACE`. |
+| **A value may not start with `-`** | Otherwise `grep {{term}}` becomes `grep --include=*.pem` at the model's discretion — argument injection into your program. Declare `"allowLeadingDash": true` on that one parameter if passing flags is the point. |
+| **Output is untrusted** | A command's stdout can contain text that reads like an instruction. It is wrapped in `<untrusted-source>`, exactly as an MCP result is. |
+
+Also enforced: names may not shadow a built-in tool, unknown parameters are an
+error rather than silently dropped, arguments are capped at 4,096 characters,
+output at 12,000, timeouts at 120 seconds, and a manifest at 32 tools.
+
+### What is not supported, and will not pretend to be
+
+- **No inline shell strings.** `args` is an array of tokens, so `sh -c "..."` has
+  to be written out as `["sh", "-c", "..."]` — at which point the guard above is
+  doing nothing for you, and you should notice that while typing it.
+- **No non-string parameters.** A tool that wants a number receives a string and
+  parses it. One quoting rule is easier to keep right than three.
+- **No output streaming.** The reply arrives when the command finishes or its
+  timeout fires.
+- **No automatic discovery.** A file you did not point `PINCH_TOOLS` at is a file
+  you did not review, so Pinch does not go looking for one.
+
+A bad entry is logged with its reason and skipped; the rest still load. An
+assistant that refuses to boot because of a typo in one optional file is worse
+than one that boots with 3 of 4 tools and says so.
+
 ## Configuration
 
 Everything lives in `.env`; `npm run setup` writes it. The ones that matter:
@@ -532,34 +618,47 @@ Two commands ship with Pinch and change nothing:
 
 ## Extending it
 
-A tool is an object — no plugin API, no registry, no build step:
+Three ways in, depending on whose tool it is.
 
-```js
-// src/tools.js
-export const TOOL_MAP = new Map([
-  // …
-  ["word_count", {
-    schema: {
-      type: "function",
-      function: {
-        name: "word_count",
-        description: "Count words in a file in the workspace.",
-        parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
-      },
-    },
-    dangerous: false, // true = goes behind the approval gate
-    async run({ path }) {
-      const text = await readFile(resolveInWorkspace(path), "utf8");
-      return { ok: true, output: `${text.split(/\s+/).filter(Boolean).length} words` };
-    },
-  }],
-]);
+**1. Your own command, no code.** A JSON manifest, described in
+[Your own tools](#your-own-tools-no-code-required) above:
+
+```bash
+PINCH_TOOLS="$HOME/.pinch/tools.json"
 ```
 
-The model sees it on the next turn. `dangerous: true` puts it behind the approval gate
-automatically — you cannot forget to add the gate, because the gate is not yours to forget.
+**2. Someone else's tools.** An [MCP](https://modelcontextprotocol.io) server, one
+line in `.env` — see [Third-party tools](#third-party-tools-mcp).
 
----
+**3. A tool built into Pinch.** For contributors. A built-in is an object in
+`src/tools.js`:
+
+```js
+{
+  name: "word_count",
+  dangerous: false,              // true = goes behind the approval gate
+  description: "Count words in a file in the workspace.",
+  parameters: {
+    type: "object",
+    properties: { path: stringProp("Path relative to the workspace") },
+    required: ["path"],
+  },
+  async run({ path }) {
+    const text = await readFile(resolveInWorkspace(path), "utf8");
+    return { ok: true, output: `${text.split(/\s+/).filter(Boolean).length} words` };
+  },
+}
+```
+
+`toolSchemas()` is derived from the registry, not the array above it, so a tool
+that arrives at boot — a manifest entry, an MCP server — is offered to the model
+on the next turn without touching this file. That is what `registerTool()` is for,
+and it refuses to let anything shadow a built-in name.
+
+`dangerous: true` puts a tool behind the approval gate automatically — you cannot
+forget to add the gate, because the gate is not yours to forget. State-changing
+tools are tested by `test/custom-tools.test.js` (manifest) and `test/mcp.test.js`
+(third-party) for exactly that reason.
 
 ---
 
