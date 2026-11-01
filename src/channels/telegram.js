@@ -4,8 +4,9 @@
  */
 import { config } from "../config.js";
 import { routeMessage } from "./router.js";
-import { answerApproval } from "../agent.js";
+import { answerApproval, pendingApprovalsFor } from "../agent.js";
 import { registerSender } from "../outbound.js";
+import { formatIncomingTelegramText } from "./telegram-reply.js";
 
 const API = (method) => `https://api.telegram.org/bot${config.telegram.token}/${method}`;
 
@@ -78,8 +79,8 @@ export function startTelegram(log = console) {
   async function handleMessage(msg) {
     const chatId = msg.chat.id;
     const userId = msg.from?.id;
-    const text = msg.text || msg.caption || "";
-    if (!text) {
+    const incomingText = msg.text || msg.caption || "";
+    if (!incomingText) {
       await send(chatId, "🦞 I can only read text for now. Voice notes are on the roadmap — use the web panel mic for talking.");
       return;
     }
@@ -94,12 +95,17 @@ export function startTelegram(log = console) {
       return;
     }
 
+    const sessionId = `telegram-${chatId}`;
+    const approvalReply = pendingApprovalsFor(sessionId).length > 0 &&
+      /^(?:yes|no)[.!?]?$/i.test(incomingText.trim());
+    const text = formatIncomingTelegramText(msg, { preserveApprovalReply: approvalReply });
+
     await call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
     try {
       await routeMessage({
         channel: "telegram",
         text,
-        sessionId: `telegram-${chatId}`,
+        sessionId,
         target: String(chatId),
         send: (t) => send(chatId, t),
         onProgress: async () => {
