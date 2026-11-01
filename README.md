@@ -2,7 +2,7 @@
   <img src="./assets/banner.svg" width="100%" alt="Pinch — a personal AI assistant that lives on your own machine" />
 </p>
 
-<h1 align="center">🦞 Pinch</h1>
+<h1 align="center">🦞 Pinch — a local-first personal AI assistant</h1>
 
 <p align="center">
   <b>A personal AI assistant that runs on your own computer.</b><br/>
@@ -73,6 +73,15 @@ npm run demo
 
 You message it like a person, and it works like a very fast intern who has your laptop.
 
+## How this is different
+
+| | Most self-hosted assistants | Pinch |
+|---|---|---|
+| Runtime dependencies | A tree of packages | **Zero** — the Node standard library |
+| Size | Tens of thousands of lines | **Under 6,000**, readable before you hand it a shell |
+| Security posture | A policy document | **A published audit of itself**, unfixed findings included |
+| Approval gate | All-or-nothing | **Read-only commands are proven read-only** before they skip a prompt |
+| Default model | Their choice | **Yours**, local via Ollama |
 ## Ask it things like
 
 > *"scan ~/code and tell me which repos have uncommitted changes"*
