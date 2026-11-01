@@ -832,3 +832,31 @@ narrow the folder instead of treating the result as exhaustive. Skipped files ar
 counted, including unreadable files. Indexing is bounded but runs in-process, so
 large folders can briefly delay the event loop; this is intended for small personal
 text collections, not enterprise-scale search.
+
+### Optional Whisper transcription API
+
+The web microphone uses browser speech recognition; configuring Whisper does not
+replace it automatically. Clients that upload recorded audio can use
+`POST /api/transcribe` (same Pinch authentication/origin rules as other APIs).
+Send raw audio bytes, not multipart, with `Content-Type: audio/webm` (codec
+parameters allowed), `audio/ogg`, `audio/wav`, `audio/x-wav`, `audio/mpeg`,
+`audio/mp4` or `audio/flac`. The response is `{ "text": "..." }`.
+
+Set `WHISPER_URL` to the **full OpenAI-compatible transcription endpoint**, e.g.
+`http://127.0.0.1:8080/v1/audio/transcriptions`, and restart. Pinch forwards a
+multipart file and model `whisper-1`. Use a local server to keep recordings on
+your device; pointing this URL at a remote server sends audio there.
+
+Limits: 10 MB per upload, five seconds for the upstream request **including the
+response body**, 1 MB for the upstream response. Oversized uploads return 413,
+unsupported MIME types 415, empty clips 400, and unset/unreachable/timed-out or
+invalid upstream responses 502 with JSON guidance. MIME validation is a declared
+format allowlist, not a codec decoder or proof that the bytes are valid audio.
+
+`npm run doctor` reports unconfigured voice as optional, unreachable/erroring
+endpoints as warnings. Automatic probes contact only loopback HTTP(S) origins
+(`localhost`, `127.0.0.1`, `[::1]`), at `/`, with no credentials, query, or redirect
+following. Remote or credential-bearing URLs are reported as configured but not
+probed; verify those explicitly. Transcription still uses your configured full
+endpoint. Doctor uses HEAD (including 405 responses), does not upload audio, and
+reports only origin reachability—not endpoint or transcription readiness.

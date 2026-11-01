@@ -1,3 +1,4 @@
+import { AUDIO_MAX_BYTES, AUDIO_TYPES, transcribeAudio } from "./voice.js";
 /**
  * server.js — Pinch's local HTTP surface: web panel, REST API, SSE stream.
  *
@@ -329,6 +330,26 @@ async function handleApi(req, res, url) {
     if (req.method === "DELETE") {
       deleteSession(id);
       return json(res, 200, { ok: true });
+    }
+  }
+
+  if (path === "/api/transcribe" && req.method === "POST") {
+    if (Number(req.headers["content-length"] || 0) > AUDIO_MAX_BYTES) {
+      throw new HTTPError(413, "Audio exceeds 10 MB; record a shorter clip.");
+    }
+    const mime = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+    if (!AUDIO_TYPES.has(mime)) return json(res, 415, { error: "Unsupported audio MIME type; use WebM, Ogg, WAV, MP3, MP4 or FLAC." });
+    const raw = await readRaw(req, AUDIO_MAX_BYTES);
+    if (!raw.length) throw new HTTPError(400, "Audio upload is empty; record a clip first.");
+    if (!config.whisperUrl) return json(res, 502, { error: "WHISPER_URL is not configured; set it to an OpenAI-compatible transcription endpoint and restart Pinch." });
+    try {
+      const text = await transcribeAudio(raw, mime, config.whisperUrl);
+      return json(res, 200, { text });
+    } catch (err) {
+      const timedOut = err.name === "TimeoutError" || err.name === "AbortError";
+      return json(res, 502, { error: timedOut
+        ? "Whisper timed out after 5 seconds; check WHISPER_URL or try a shorter recording."
+        : "Voice transcription failed; check WHISPER_URL, the endpoint format and transcription server logs." });
     }
   }
 

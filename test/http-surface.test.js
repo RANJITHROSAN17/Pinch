@@ -34,6 +34,7 @@ before(async () => {
     cwd: root,
     env: {
       ...process.env,
+      WHISPER_URL: "",
       LLM_PROVIDER: "mock",
       PINCH_KEY: "",
       PINCH_PORT: String(PORT),
@@ -186,4 +187,57 @@ test("a static path traversal attempt cannot read /etc/passwd", async () => {
 test("an unknown endpoint is a clean 404", async () => {
   const res = await fetch(`${BASE}/api/nope`);
   assert.equal(res.status, 404);
+});
+
+
+test("voice: rejects non-audio and oversized bodies before upstream configuration", async () => {
+  const unsupported = await raw("/api/transcribe", { method: "POST", headers: { "content-type": "text/plain" }, body: "not audio" });
+  assert.equal(unsupported.status, 415);
+  assert.match(JSON.parse(unsupported.text).error, /MIME/);
+  const oversized = await fetch(`${BASE}/api/transcribe`, { method: "POST", headers: { "content-type": "audio/wav" }, body: Buffer.alloc(10_000_001) });
+  assert.equal(oversized.status, 413);
+  await oversized.arrayBuffer();
+});
+
+test("voice: unset WHISPER_URL returns actionable JSON", async () => {
+  const res = await raw("/api/transcribe", { method: "POST", headers: { "content-type": "audio/webm;codecs=opus" }, body: "audio" });
+  assert.equal(res.status, 502);
+  assert.match(JSON.parse(res.text).error, /WHISPER_URL.*not configured/);
+});
+
+test("voice: hung Whisper aborts and HTTP server remains healthy", async () => {
+  let calls = 0;
+  const upstream = http.createServer((req, res) => {
+    calls++;
+    req.resume();
+    // A partial response tests that the deadline covers the body, not just headers.
+    res.writeHead(200, { "content-type": "application/json" });
+    res.write('{"text":');
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const port = PORT + 100;
+  const proc = spawn(process.execPath, [join(root, "src/index.js")], {
+    cwd: root,
+    env: { ...process.env, LLM_PROVIDER: "mock", PINCH_KEY: "", PINCH_HOST: "127.0.0.1", PINCH_PORT: String(port), TELEGRAM_TOKEN: "", PINCH_DATA: mkdtempSync(join(tmpdir(), "pinch-voice-")), WHISPER_URL: `http://127.0.0.1:${upstream.address().port}/transcribe` },
+    stdio: "ignore",
+  });
+  try {
+    let ready = false;
+    for (let i = 0; i < 100; i++) {
+      try { if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) { ready = true; break; } } catch {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(ready);
+    const started = Date.now();
+    const res = await fetch(`http://127.0.0.1:${port}/api/transcribe`, { method: "POST", headers: { "content-type": "audio/wav" }, body: "audio" });
+    assert.equal(res.status, 502);
+    assert.match((await res.json()).error, /timed out/);
+    assert.ok(Date.now() - started < 9000);
+    assert.equal(calls, 1);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/health`)).status, 200);
+  } finally {
+    proc.kill("SIGKILL");
+    upstream.closeAllConnections();
+    await new Promise((r) => upstream.close(r));
+  }
 });
