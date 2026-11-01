@@ -638,7 +638,7 @@ home, no telemetry, no analytics, no update check. `rm -rf data` is a valid unin
 <details>
 <summary><b>Why "Pinch"?</b></summary>
 
-🦞 A lobster. It lives in a shell, it is territorial about its little rock, and it does not need a
+ A lobster. It lives in a shell, it is territorial about its little rock, and it does not need a
 data centre to be useful. That is the whole brand.
 </details>
 

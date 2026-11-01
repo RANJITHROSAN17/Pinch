@@ -1,4 +1,4 @@
-# Contributing to Pinch 🦞
+# Contributing to Pinch
 
 Pinch is a personal project that happens to be useful to other people. Contributions are
 welcome, especially the kind that make it **safer** or **work in more places**.
@@ -21,7 +21,7 @@ welcome, especially the kind that make it **safer** or **work in more places**.
 ## Getting set up
 
 ```bash
-git clone https://github.com/RANJITHROSAN17/Pinch && cd pinch
+git clone https://github.com/pinchfoundry/Pinch && cd Pinch
 npm test          # 110 tests, no model needed
 npm run audit     # the adversarial self-check — does the product still refuse attacks?
 npm run demo      # mock brain — the whole app, no Ollama required

@@ -6,8 +6,9 @@
 <meta name="theme-color" content="#160a0c" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>Pinch 🦞</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A6%9E%3C/text%3E%3C/svg%3E" />
+<title>Pinch — a local-first personal AI assistant</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <style>
   :root{
     --bg:#160a0c; --bg2:#1e0f12; --panel:#241316; --line:#3a2024;
@@ -17,6 +18,10 @@
     --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
+  .lob svg{width:1.35em;height:1.35em;display:block}
+  .q svg{width:1.1em;height:1.1em;vertical-align:-0.18em;margin-right:.35em}
+  .who svg{width:1.5em;height:1.5em;display:block}
+  .pinch-mark-slot svg{width:1.05em;height:1.05em;display:inline-block;vertical-align:-0.18em;margin-right:.3em}
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
@@ -196,7 +201,7 @@
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="lob">🦞</span>
+      <span class="lob"><svg class="pinch-mark" width="28" height="28" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><linearGradient id="pinchMarkGrad" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0%" stop-color="#ff8f6b"/><stop offset="55%" stop-color="#ff6a4d"/><stop offset="100%" stop-color="#e0502f"/></linearGradient></defs><path d="M 15 92 L 16 87 L 17 82 L 18 76 L 19 71 L 19 66 L 20 62 L 21 58 L 22 54 L 23 50 L 25 47 L 26 44 L 27 42 L 29 41 L 30 41 L 30 41 L 31 41 L 31 41 L 32 42 L 34 43 L 36 45 L 38 47 L 42 50 L 53 37 L 49 34 L 45 31 L 41 29 L 37 28 L 33 28 L 29 28 L 25 30 L 22 32 L 20 35 L 19 38 L 18 41 L 17 44 L 16 48 L 15 52 L 15 56 L 14 61 L 14 66 L 14 71 L 13 76 L 13 81 L 12 86 L 12 92 L 14 91 L 14 91 L 13 91 L 13 91 L 12 91 L 12 91 L 12 92 L 12 92 L 12 93 L 12 93 L 12 93 L 13 94 Z" fill="url(#pinchMarkGrad)"/><path d="M 107 92 L 107 86 L 106 81 L 106 76 L 105 71 L 105 66 L 105 61 L 104 56 L 104 52 L 103 48 L 102 44 L 101 41 L 100 38 L 99 35 L 97 32 L 94 30 L 90 28 L 86 28 L 82 28 L 78 29 L 74 31 L 70 34 L 66 37 L 77 50 L 81 47 L 83 45 L 85 43 L 87 42 L 88 41 L 88 41 L 89 41 L 89 41 L 90 41 L 92 42 L 93 44 L 94 47 L 96 50 L 97 54 L 98 58 L 99 62 L 100 66 L 100 71 L 101 76 L 102 82 L 103 87 L 104 92 L 104 91 L 104 92 L 104 92 L 104 92 L 104 93 L 104 93 L 104 94 L 105 94 L 105 94 L 106 94 L 106 94 L 106 94 Z" fill="url(#pinchMarkGrad)"/></svg></span>
       <span>Pinch<small id="ownerLine">local assistant</small></span>
     </div>
     <button class="newbtn" id="newChat">＋ New chat</button>
@@ -212,7 +217,7 @@
     <header class="top">
       <button class="hbtn" id="burger" style="display:none">☰</button>
       <div>
-        <div class="title">Pinch 🦞</div>
+        <div class="title">Pinch</div>
         <div class="sub" id="brainLine">local · private · yours</div>
       </div>
       <div class="spacer"></div>
@@ -273,6 +278,10 @@
   </div>
 </div>
 
+<script>
+// The brand mark, inlined once so every use costs no extra request.
+const PINCH_MARK = '<svg class=\"pinch-mark\" width=\"28\" height=\"28\" viewBox=\"0 0 120 120\" aria-hidden=\"true\" focusable=\"false\"><defs><linearGradient id=\"pinchMarkGrad\" x1=\"0.15\" y1=\"0\" x2=\"0.85\" y2=\"1\"><stop offset=\"0%\" stop-color=\"#ff8f6b\"/><stop offset=\"55%\" stop-color=\"#ff6a4d\"/><stop offset=\"100%\" stop-color=\"#e0502f\"/></linearGradient></defs><path d=\"M 15 92 L 16 87 L 17 82 L 18 76 L 19 71 L 19 66 L 20 62 L 21 58 L 22 54 L 23 50 L 25 47 L 26 44 L 27 42 L 29 41 L 30 41 L 30 41 L 31 41 L 31 41 L 32 42 L 34 43 L 36 45 L 38 47 L 42 50 L 53 37 L 49 34 L 45 31 L 41 29 L 37 28 L 33 28 L 29 28 L 25 30 L 22 32 L 20 35 L 19 38 L 18 41 L 17 44 L 16 48 L 15 52 L 15 56 L 14 61 L 14 66 L 14 71 L 13 76 L 13 81 L 12 86 L 12 92 L 14 91 L 14 91 L 13 91 L 13 91 L 12 91 L 12 91 L 12 92 L 12 92 L 12 93 L 12 93 L 12 93 L 13 94 Z\" fill=\"url(#pinchMarkGrad)\"/><path d=\"M 107 92 L 107 86 L 106 81 L 106 76 L 105 71 L 105 66 L 105 61 L 104 56 L 104 52 L 103 48 L 102 44 L 101 41 L 100 38 L 99 35 L 97 32 L 94 30 L 90 28 L 86 28 L 82 28 L 78 29 L 74 31 L 70 34 L 66 37 L 77 50 L 81 47 L 83 45 L 85 43 L 87 42 L 88 41 L 88 41 L 89 41 L 89 41 L 90 41 L 92 42 L 93 44 L 94 47 L 96 50 L 97 54 L 98 58 L 99 62 L 100 66 L 100 71 L 101 76 L 102 82 L 103 87 L 104 92 L 104 91 L 104 92 L 104 92 L 104 92 L 104 93 L 104 93 L 104 94 L 105 94 L 105 94 L 106 94 L 106 94 L 106 94 Z\" fill=\"url(#pinchMarkGrad)\"/></svg>';
+</script>
 <script type="module">
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -313,7 +322,7 @@ function md(src) {
 function addMsg(role, text) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
-  el.innerHTML = `<div class="who">${role === "user" ? "🧑" : "🦞"}</div><div class="bubble"></div>`;
+  el.innerHTML = `<div class="who">${role === "user" ? "🧑" : PINCH_MARK}</div><div class="bubble"></div>`;
   el.querySelector(".bubble").innerHTML = role === "user" ? md(text) : md(text);
   $("thread").appendChild(el);
   scrollDown();
@@ -330,7 +339,7 @@ function addSteps() {
 function addApproval(id, description, onAnswer) {
   const el = document.createElement("div");
   el.className = "approval";
-  el.innerHTML = `<div class="q">🦞 Claws want to <code>${description.replace(/</g,"&lt;")}</code>. Allow?</div>
+  el.innerHTML = `<div class="q"><svg class="pinch-mark" width="28" height="28" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><linearGradient id="pinchMarkGrad" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0%" stop-color="#ff8f6b"/><stop offset="55%" stop-color="#ff6a4d"/><stop offset="100%" stop-color="#e0502f"/></linearGradient></defs><path d="M 15 92 L 16 87 L 17 82 L 18 76 L 19 71 L 19 66 L 20 62 L 21 58 L 22 54 L 23 50 L 25 47 L 26 44 L 27 42 L 29 41 L 30 41 L 30 41 L 31 41 L 31 41 L 32 42 L 34 43 L 36 45 L 38 47 L 42 50 L 53 37 L 49 34 L 45 31 L 41 29 L 37 28 L 33 28 L 29 28 L 25 30 L 22 32 L 20 35 L 19 38 L 18 41 L 17 44 L 16 48 L 15 52 L 15 56 L 14 61 L 14 66 L 14 71 L 13 76 L 13 81 L 12 86 L 12 92 L 14 91 L 14 91 L 13 91 L 13 91 L 12 91 L 12 91 L 12 92 L 12 92 L 12 93 L 12 93 L 12 93 L 13 94 Z" fill="url(#pinchMarkGrad)"/><path d="M 107 92 L 107 86 L 106 81 L 106 76 L 105 71 L 105 66 L 105 61 L 104 56 L 104 52 L 103 48 L 102 44 L 101 41 L 100 38 L 99 35 L 97 32 L 94 30 L 90 28 L 86 28 L 82 28 L 78 29 L 74 31 L 70 34 L 66 37 L 77 50 L 81 47 L 83 45 L 85 43 L 87 42 L 88 41 L 88 41 L 89 41 L 89 41 L 90 41 L 92 42 L 93 44 L 94 47 L 96 50 L 97 54 L 98 58 L 99 62 L 100 66 L 100 71 L 101 76 L 102 82 L 103 87 L 104 92 L 104 91 L 104 92 L 104 92 L 104 92 L 104 93 L 104 93 L 104 94 L 105 94 L 105 94 L 106 94 L 106 94 L 106 94 Z" fill="url(#pinchMarkGrad)"/></svg> Claws want to <code>${description.replace(/</g,"&lt;")}</code>. Allow?</div>
     <div class="row"><button class="allow">Allow</button><button class="deny">Deny</button></div>`;
   el.querySelector(".allow").onclick = () => { onAnswer(true); el.remove(); };
   el.querySelector(".deny").onclick = () => { onAnswer(false); el.remove(); };
@@ -425,7 +434,7 @@ function ensureWake() {
         autoGrow();
         if (event.results[i].isFinal) { rec.stop(); setTimeout(send, 150); }
       } else if (event.results[i].isFinal) {
-        toast("🦞 Listening — what do you need?", 2500);
+        toast("Listening — what do you need?", 2500);
         $("mic").classList.add("listening");
       }
     }
@@ -588,7 +597,7 @@ async function send() {
   const steps = addSteps();
   const thinking = document.createElement("div");
   thinking.className = "step";
-  thinking.innerHTML = `<span>🦞</span><b>thinking</b><span class="typing"><i></i><i></i><i></i></span>`;
+  thinking.innerHTML = `<span class="pinch-mark-slot">${PINCH_MARK}</span><b>thinking</b><span class="typing"><i></i><i></i><i></i></span>`;
   steps.appendChild(thinking);
 
   // Live bubble: text appears as the model generates it.
@@ -697,7 +706,7 @@ async function send() {
 
     thinking.remove();
     if (answer) finishLive(answer);
-    else if (!live) addMsg("assistant", "🦞 …I lost the thread there. Try again?");
+    else if (!live) addMsg("assistant", "…I lost the thread there. Try again?");
 
     if (guardFlags.length && live) {
       const note = document.createElement("div");
@@ -806,7 +815,7 @@ $("newChat").onclick = () => {
   store.sessionId = `web-${Date.now().toString(36)}`;
   localStorage.setItem("pinch.session", store.sessionId);
   $("thread").innerHTML = "";
-  addMsg("assistant", "🦞 Fresh session, same claws. What are we building?");
+  addMsg("assistant", "Fresh session, same claws. What are we building?");
   loadSessions();
   if (window.innerWidth <= 820) $("sidebar").classList.remove("open");
 };
@@ -884,7 +893,7 @@ if (window.innerWidth <= 820) $("burger").style.display = "grid";
   connectEvents();
   if (!$("thread").children.length) {
     addMsg("assistant",
-      "🦞 **Pinch here.**\n\nI run on this machine, not in someone's cloud. I can read and write code, run commands (with your permission), search the web, and remember what matters to you.\n\nTry: *\"scan my projects folder and tell me what to work on\"* — or just tap the mic and talk.");
+      "**Pinch here.**\n\nI run on this machine, not in someone's cloud. I can read and write code, run commands (with your permission), search the web, and remember what matters to you.\n\nTry: *\"scan my projects folder and tell me what to work on\"* — or just tap the mic and talk.");
   }
   setInterval(health, 20000);
 })();

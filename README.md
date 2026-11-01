@@ -2,7 +2,11 @@
   <img src="./assets/banner.svg" width="100%" alt="Pinch — a personal AI assistant that lives on your own machine" />
 </p>
 
-<h1 align="center">🦞 Pinch — a local-first personal AI assistant</h1>
+<h1 align="center">
+  <img src="./assets/mark.svg" width="64" height="64" alt="" />
+  <br />
+  Pinch — a local-first personal AI assistant
+</h1>
 
 <p align="center">
   <b>A personal AI assistant that runs on your own computer.</b><br/>
@@ -20,12 +24,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/RANJITHROSAN17/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/pinchfoundry/Pinch/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="tests" src="https://img.shields.io/badge/tests-344%20passing-4dd6c1" />
   <img alt="tools" src="https://img.shields.io/badge/tools-22-ff8f6b" />
   <img alt="runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-0-ff6a4d" />
   <a href="docs/AUDIT.md"><img alt="audited" src="https://img.shields.io/badge/security-audited-ffc061" /></a>
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-MIT-8a5cf6" /></a>
+  <a href="https://github.com/pinchfoundry/Pinch/discussions"><img alt="discussions" src="https://img.shields.io/badge/discussions-open-ff6a4d?logo=github" /></a>
 </p>
 
 ## Facts
@@ -40,15 +45,15 @@
 | **Tools** | 22, five of which ask before they change anything |
 | **Runtime dependencies** | Zero |
 | **Licence** | MIT — free, no account, no subscription |
-| **Landing page** | https://ranjithrosan17.github.io/Pinch/ |
-| **Source** | [github.com/RANJITHROSAN17/Pinch](https://github.com/RANJITHROSAN17/Pinch) |
+| **Landing page** | https://pinchfoundry.github.io/Pinch/ |
+| **Source** | [github.com/pinchfoundry/Pinch](https://github.com/pinchfoundry/Pinch) |
 
 ## Install it in two commands
 
 ```bash
-git clone https://github.com/RANJITHROSAN17/Pinch && cd Pinch
+git clone https://github.com/pinchfoundry/Pinch && cd Pinch
 npm run setup     # one guided command: model → channels → voice → key
-npm start         # 🦞  http://localhost:7777
+npm start         #     http://localhost:7777
 ```
 
 `npm run setup` checks your model, writes `.env`, generates a key, and prints the URL to
@@ -96,6 +101,26 @@ npm run demo
   keeping every path inside your workspace — so the worst case of a misjudgement is still a prompt.
 
 You message it like a person, and it works like a very fast intern who has your laptop.
+
+## How it works
+
+<p align="center">
+  <img src="./assets/architecture.svg" width="100%" alt="Five stages: channels, router, agent, risk and approval, guard — with a SQLite store, scheduler and MCP plugins on disk" />
+</p>
+
+Five stages, and only one of them can touch your machine:
+
+| Stage | What happens |
+| :--- | :--- |
+| **Channels** | Telegram, Discord, Slack, WhatsApp, or the browser panel by voice |
+| **Router** | Normalises the message and attaches any files you sent |
+| **Agent** | Plans the steps, calls tools, writes the answer |
+| **Risk + approval** | `read` commands run straight through; anything that could change state stops and asks you |
+| **Guard** | Checks the reply's claims and citations before it leaves, and flags what it had to drop |
+
+The two files that decide whether you trust this with a shell are
+[`src/risk.js`](src/risk.js) and [`src/guard.js`](src/guard.js). Both are short. Read them.
+
 
 ## How this is different
 
@@ -214,5 +239,5 @@ Full method, results and **what is still not fixed**: [`docs/AUDIT.md`](docs/AUD
 ---
 
 <p align="center">
-  <sub>MIT licensed · built to run on a laptop, in a room, for one person · 🦞</sub>
+  <sub>MIT licensed · built to run on a laptop, in a room, for one person</sub>
 </p>

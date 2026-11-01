@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: "🦞 Good first issues (curated queue)"
-    url: "https://github.com/RANJITHROSAN17/Pinch/labels/good%20first%20issue"
+  - name: "Good first issues (curated queue)"
+    url: "https://github.com/pinchfoundry/Pinch/labels/good%20first%20issue"
     about: "Human-reviewed, self-contained tasks with exact file paths and verification commands."
-  - name: "🔒 Report a security vulnerability privately"
-    url: "https://github.com/RANJITHROSAN17/Pinch/security/advisories/new"
+  - name: "Report a security vulnerability privately"
+    url: "https://github.com/pinchfoundry/Pinch/security/advisories/new"
     about: "Please do NOT open a public issue for security bugs — see SECURITY.md."
   - name: "📖 Setup & troubleshooting guide"
-    url: "https://github.com/RANJITHROSAN17/Pinch/blob/main/docs/GUIDE.md"
+    url: "https://github.com/pinchfoundry/Pinch/blob/main/docs/GUIDE.md"
     about: "Run `npm run doctor` and `npm run brain` first to diagnose local setup issues."

@@ -493,7 +493,7 @@ finding 1.
 ## How to reproduce this audit
 
 ```bash
-git clone https://github.com/RANJITHROSAN17/Pinch && cd pinch
+git clone https://github.com/pinchfoundry/Pinch && cd Pinch
 npm install --omit=dev         # zero dependencies; this just writes nothing
 
 # the whole suite, including every regression test above
@@ -770,4 +770,4 @@ gate, workspace sandbox, honest guard". All three were real. The sandbox still h
 and the right response to finding it is this document — not a quiet patch, and not a
 deleted paragraph in the README.
 
-🦞
+

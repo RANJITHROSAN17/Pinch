@@ -1,6 +1,6 @@
 # Security notes
 
-**Reporting a vulnerability:** use [GitHub's private advisory form](https://github.com/RANJITHROSAN17/Pinch/security/advisories/new) —
+**Reporting a vulnerability:** use [GitHub's private advisory form](https://github.com/pinchfoundry/Pinch/security/advisories/new) —
 not a public issue. The full policy (what is in scope, response times, what is
 already known and accepted) is in the [repository security policy](../SECURITY.md).
 
