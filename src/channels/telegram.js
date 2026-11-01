@@ -35,8 +35,8 @@ export function formatIncomingTelegramText(msg, { preserveApprovalReply = false 
   if (typeof reply !== "string" || !reply.trim()) return text;
 
   const prefix = "[Replying to: ";
-  const suffix = "]\\n";
-  const chars = Array.from(reply.trim().replace(/\\s+/g, " "));
+  const suffix = "]\n";
+  const chars = Array.from(reply.trim().replace(/\s+/g, " "));
   let quote = chars.slice(0, MAX_REPLY_HEADER_CHARS);
   let truncated = quote.length < chars.length;
   let header = prefix + JSON.stringify(quote.join("") + (truncated ? "…" : "")) + suffix;
